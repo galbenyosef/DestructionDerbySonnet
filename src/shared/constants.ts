@@ -92,3 +92,27 @@ export const ARENA = {
   OBSTACLE_RING_RADIUS: 14,
   OBSTACLE_HALF: { x: 2.5, y: 0.75, z: 1.0 },
 } as const;
+
+export const NET = {
+  PROTOCOL_VERSION: 1,
+  /** Simulation ticks per snapshot: 2 => 30 Hz. */
+  SNAPSHOT_EVERY: 2,
+  /** Ticks between a roster change and the world rebuild (baseline policy). */
+  REBUILD_DELAY_TICKS: 30,
+  INPUT_QUEUE_MAX: 6,
+  /** Ticks without a fresh input before the last input is replaced by neutral (0.5 s). */
+  INPUT_STARVE_NEUTRAL_TICKS: 30,
+  /** Ticks without any input before the player is disconnected (30 s). */
+  INACTIVE_KICK_TICKS: 60 * 30,
+  MAX_BUFFERED_BYTES: 64 * 1024,
+  MAX_PAYLOAD_BYTES: 1024,
+  HEARTBEAT_MS: 30_000,
+  NAME_MAX: 16,
+  ROOM_CODE_LENGTH: 4,
+  ROOM_CODE_ALPHABET: 'ABCDEFGHJKLMNPQRSTUVWXYZ',
+  QUAT_SCALE: 32767,
+  LINVEL_SCALE: 512,
+  ANGVEL_SCALE: 1024,
+  INTERP_DELAY_MS: 100,
+  MAX_EXTRAPOLATION_MS: 250,
+} as const;
