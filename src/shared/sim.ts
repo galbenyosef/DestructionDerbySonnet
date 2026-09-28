@@ -1,7 +1,7 @@
 import { ARENA, PHYSICS } from './constants';
 import { buildArena, spawnPose, type ArenaOptions } from './arena';
 import { quantizeInput, type CarInput } from './input';
-import { RAPIER } from './physics';
+import { RAPIER, physicsReady } from './physics';
 import type { CarState, WheelPose } from './types';
 import { createCarRig, driveCar, type CarRig } from './vehicle';
 
@@ -22,6 +22,7 @@ export class Simulation {
   private disposed = false;
 
   constructor(slots: readonly number[], options: SimOptions = {}) {
+    if (!physicsReady()) throw new Error('Physics is not initialised: await initPhysics() before creating a Simulation.');
     const unique = [...new Set(slots)].sort((a, b) => a - b);
     if (unique.length > ARENA.MAX_CARS) {
       throw new RangeError(`at most ${ARENA.MAX_CARS} cars per simulation, got ${unique.length}`);
