@@ -4,5 +4,6 @@ coverage/
 *.log
 firebase-debug.log
 .DS_Store
+.playwright-mcp/
 .env
 .env.*
