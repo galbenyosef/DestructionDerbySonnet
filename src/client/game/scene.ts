@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { obstacleBoxes, wallSegments, type BoxSpec } from '../../shared/arena';
 import { ARENA } from '../../shared/constants';
+import { needsResize } from './viewport';
 
 export interface GameScene {
   readonly renderer: THREE.WebGLRenderer;
@@ -132,7 +133,7 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
     const h = canvas.clientHeight;
     if (w === 0 || h === 0) return;
     const dpr = Math.min(window.devicePixelRatio, 2);
-    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+    if (needsResize(canvas.width, canvas.height, w, h, dpr)) {
       renderer.setPixelRatio(dpr);
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
