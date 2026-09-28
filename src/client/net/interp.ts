@@ -15,7 +15,7 @@ export interface InterpPose {
   extrapolated: boolean;
 }
 
-const lerpState = (a: CarState, b: CarState, t: number): CarState => ({
+export const lerpState = (a: CarState, b: CarState, t: number): CarState => ({
   pos: vlerp(a.pos, b.pos, t),
   quat: quatNlerp(a.quat, b.quat, t),
   linvel: vlerp(a.linvel, b.linvel, t),
