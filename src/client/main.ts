@@ -1,8 +1,12 @@
+import { freezeTuning } from '../shared/constants';
+import { initPhysics } from '../shared/physics';
+import { simHash } from '../shared/determinism';
 import { webglAvailable } from './game/capabilities';
 import { GameClient } from './game/gameClient';
 import { startSandbox } from './game/sandbox';
 import { createGameScene, type GameScene } from './game/scene';
 import { serverUrl } from './net/connection';
+import { parseLagParams } from './net/latency';
 import { createHud } from './ui/hud';
 import { automaticChoice } from './ui/autoChoice';
 import { showMenu, type JoinChoice } from './ui/menu';
@@ -32,10 +36,20 @@ function startBackdrop(gs: GameScene): () => void {
   };
 }
 
-function play(gs: GameScene, choice: JoinChoice): Promise<string | undefined> {
+async function play(gs: GameScene, choice: JoinChoice, params: URLSearchParams): Promise<string | undefined> {
+  let net: 'predict' | 'interp' = params.get('net') === 'interp' ? 'interp' : 'predict';
+  if (net === 'predict') {
+    try {
+      await initPhysics(); // the local simulation needs the WASM physics engine
+    } catch (err) {
+      console.error('Physics engine failed to load, using interpolation:', err);
+      net = 'interp';
+    }
+  }
+  const lag = parseLagParams(params);
+  const url = serverUrl(location, import.meta.env.VITE_WS_URL as string | undefined);
   return new Promise((resolve) => {
-    const url = serverUrl(location, import.meta.env.VITE_WS_URL as string | undefined);
-    new GameClient({ gs, hud: createHud(ui), choice, url, onExit: resolve }).start();
+    new GameClient({ gs, hud: createHud(ui), choice, url, onExit: resolve, net, lag }).start();
   });
 }
 
@@ -46,6 +60,7 @@ async function boot(): Promise<void> {
     return;
   }
   const params = new URLSearchParams(location.search);
+  if (!params.has('sandbox')) freezeTuning(); // only the offline sandbox may edit the physics tuning
   try {
     if (params.has('sandbox')) {
       await startSandbox(canvas, hudEl);
@@ -62,12 +77,20 @@ async function boot(): Promise<void> {
       auto = null;
       stopBackdrop();
       ui.replaceChildren();
-      error = await play(gs, choice); // resolves when the game ends; loop back to the menu with the reason
+      error = await play(gs, choice, params); // resolves when the game ends; loop back to the menu with the reason
     }
   } catch (err) {
     console.error(err);
     hudEl.textContent = `Failed to start: ${err instanceof Error ? err.message : String(err)}`;
   }
 }
+
+// Debug hooks: `await __derby.simHash()` hashes a scripted 600-tick simulation, to compare Node against this browser.
+Object.assign((window as unknown as { __derby?: object }).__derby ?? ((window as unknown as { __derby: object }).__derby = {}), {
+  simHash: async (ticks = 600): Promise<string> => {
+    await initPhysics();
+    return simHash(ticks);
+  },
+});
 
 void boot();
