@@ -1349,9 +1349,10 @@ This is the highest-risk task (handling feel). The thresholds below were measure
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ARENA, CAR, CAR_FORWARD, CAR_RIGHT, CAR_UP, DRIVE } from '../src/shared/constants';
 import { NEUTRAL_INPUT, type CarInput } from '../src/shared/input';
-import { quatRotate, vdot, vlen, vsub } from '../src/shared/math';
+import { quatFromYaw, quatRotate, vdot, vlen, vsub } from '../src/shared/math';
 import { initPhysics } from '../src/shared/physics';
 import { Simulation, type SimOptions } from '../src/shared/sim';
+import type { CarState } from '../src/shared/types';
 import { wheelLocalPosition } from '../src/shared/vehicle';
 
 /** Flat, wall-less, very large ground so straight-line handling tests are not cut short. */
@@ -1387,6 +1388,25 @@ const lat = (sim: Simulation, slot = 0): number => {
 const upY = (sim: Simulation, slot = 0): number => quatRotate(sim.getState(slot).quat, CAR_UP).y;
 const yaw = (sim: Simulation, slot = 0): number => sim.getState(slot).angvel.y;
 const full: CarInput = { throttle: 1, steer: 0, handbrake: false };
+
+/** 2D separating-axis overlap (metres) between two chassis boxes in the XZ plane; > 0 means they overlap. */
+function overlap(a: CarState, b: CarState): number {
+  const axes = (s: CarState) => {
+    const f = quatRotate(s.quat, CAR_FORWARD);
+    const n = Math.hypot(f.x, f.z) || 1;
+    return { f: { x: f.x / n, z: f.z / n }, r: { x: -f.z / n, z: f.x / n } };
+  };
+  const A = axes(a);
+  const B = axes(b);
+  const d = { x: b.pos.x - a.pos.x, z: b.pos.z - a.pos.z };
+  let min = Infinity;
+  for (const ax of [A.f, A.r, B.f, B.r]) {
+    const reach = (u: { x: number; z: number }, half: number): number => Math.abs(u.x * ax.x + u.z * ax.z) * half;
+    const total = reach(A.f, CAR.HALF.x) + reach(A.r, CAR.HALF.z) + reach(B.f, CAR.HALF.x) + reach(B.r, CAR.HALF.z);
+    min = Math.min(min, total - Math.abs(d.x * ax.x + d.z * ax.z));
+  }
+  return min;
+}
 
 describe('wheel layout', () => {
   it('puts front wheels forward (+X) and right-hand wheels on +Z', () => {
@@ -1542,14 +1562,38 @@ describe('Simulation: driving', () => {
     const sim = make([0, 1], FLAT); // slots 0 and 1 spawn opposite each other, facing the centre
     run(sim, 60);
     run(sim, 0, { 0: full, 1: full });
-    let minDist = Infinity;
+    let maxOverlap = -Infinity;
     for (let i = 0; i < 60 * 8; i++) {
       sim.step();
-      minDist = Math.min(minDist, vlen(vsub(sim.getState(0).pos, sim.getState(1).pos)));
+      maxOverlap = Math.max(maxOverlap, overlap(sim.getState(0), sim.getState(1)));
     }
-    expect(minDist).toBeGreaterThan(4.0); // cars are 4.6 m long
+    // Touching boxes overlap by ~0. The ~30 m/s impact sinks in by ~0.7 m for a tick or two before CCD resolves it,
+    // whereas a car passing through the other would reach ~2 m (the chassis width). Centre distance is NOT a valid
+    // criterion: after the first hit the cars rotate and legitimately touch with centres only ~3.4 m apart.
+    expect(maxOverlap).toBeLessThan(1.0);
     expect(upY(sim, 0)).toBeGreaterThan(0.9);
     expect(upY(sim, 1)).toBeGreaterThan(0.9);
+  });
+});
+
+describe('test helper: overlap()', () => {
+  const still = { x: 0, y: 0, z: 0 };
+  const at = (x: number, z: number, yawRad = 0): CarState => ({
+    pos: { x, y: 1, z },
+    quat: quatFromYaw(yawRad),
+    linvel: still,
+    angvel: still,
+  });
+
+  it('is the chassis width for coincident aligned cars and ~0 for cars touching nose to tail', () => {
+    expect(overlap(at(0, 0), at(0, 0))).toBeCloseTo(2 * CAR.HALF.z, 6);
+    expect(overlap(at(0, 0), at(2 * CAR.HALF.x, 0))).toBeCloseTo(0, 6);
+  });
+
+  it('is negative for separated cars and for a nose touching a broadside', () => {
+    expect(overlap(at(0, 0), at(6, 0))).toBeLessThan(0);
+    // car B rotated 90 degrees sits beside car A's nose: A's half-length + B's half-width apart
+    expect(overlap(at(0, 0), at(CAR.HALF.x + CAR.HALF.z + 0.1, 0, Math.PI / 2))).toBeLessThan(0);
   });
 });
 
