@@ -17,7 +17,7 @@
 - tsconfig: `target: ES2022`, `moduleResolution: bundler`, `strict: true`, explicit `types` per project.
 - Axes: forward = +X, up = +Y, right = +Z, wheel axle = +Z. A positive Rapier steering angle turns LEFT; `CarInput.steer = +1` means RIGHT, so `DRIVE.STEER_SIGN = -1`.
 - Simulation path (`vehicle.ts`, `sim.ts`, collider construction): fixed dt = 1/60; no `Math.random`, `Date.now` or per-tick trigonometry (trig only in one-time geometry construction, rounded with `round3` / `round6`); cars processed in ascending slot order; inputs pass through `quantizeInput` before use.
-- Memory: `Simulation.dispose()` must call `world.removeVehicleController(...)` for every car before `world.free()`.
+- Memory: `Simulation.dispose()` must free the world eagerly: `world.removeVehicleController(...)` for every car, then `world.free()`, exactly once. (Rapier 0.21's `World.free()` also frees registered controllers, so the explicit removal is defence in depth; the eager, single `free()` is what matters — see the `dispose` contract test.)
 - three r186: use `THREE.PCFShadowMap` (never `PCFSoftShadowMap`) and `THREE.Timer` (never `THREE.Clock`); addon imports use the `three/addons/...` path.
 - Working title "Wreckyard"; no third-party assets; all visuals are generated in code.
 - Commits: the approved spec says "`git init` only, no commits unless you ask". Every task ends with a commit step; run it **only if the user has opted in to commits**, otherwise skip it.
@@ -1346,7 +1346,7 @@ This is the highest-risk task (handling feel). The thresholds below were measure
 `tests/vehicle.test.ts`:
 
 ```ts
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ARENA, CAR, CAR_FORWARD, CAR_RIGHT, CAR_UP, DRIVE } from '../src/shared/constants';
 import { NEUTRAL_INPUT, type CarInput } from '../src/shared/input';
 import { quatFromYaw, quatRotate, vdot, vlen, vsub } from '../src/shared/math';
@@ -1693,7 +1693,23 @@ describe('Simulation: rosters, inputs and lifecycle', () => {
     expect(() => sim.step()).toThrow(/disposed/i);
   });
 
-  it('does not leak memory when simulations are created and destroyed repeatedly', () => {
+  it('dispose releases the Rapier world eagerly: every controller and the world are freed exactly once', () => {
+    const sim = new Simulation([0, 1, 2]);
+    // Observe the real native objects (spyOn calls through, nothing is stubbed). Rapier 0.21 would also reclaim
+    // orphaned objects from GC finalizers, but those are driven by JS heap pressure, not by the wasm memory a
+    // world occupies, so a server that rebuilds a world every round must free eagerly.
+    const world = Reflect.get(sim, 'world') as { free(): void };
+    const rigs = Reflect.get(sim, 'ordered') as Array<{ controller: { free(): void } }>;
+    const worldFree = vi.spyOn(world, 'free');
+    const controllerFrees = rigs.map((rig) => vi.spyOn(rig.controller, 'free'));
+    sim.dispose();
+    sim.dispose(); // idempotent: no second free
+    expect(worldFree).toHaveBeenCalledTimes(1);
+    expect(controllerFrees).toHaveLength(3);
+    for (const spy of controllerFrees) expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps memory bounded over repeated create/dispose cycles (coarse smoke check)', () => {
     const cycle = (): void => {
       const s = new Simulation([0, 1, 2, 3, 4, 5, 6, 7]);
       for (let i = 0; i < 10; i++) s.step();
@@ -1703,7 +1719,9 @@ describe('Simulation: rosters, inputs and lifecycle', () => {
     const before = process.memoryUsage().rss;
     for (let i = 0; i < 300; i++) cycle();
     const growthMb = (process.memoryUsage().rss - before) / 1048576;
-    expect(growthMb).toBeLessThan(50); // without removeVehicleController this grows by ~150 MB
+    // Coarse on purpose: a missing free() only delays reclamation (see the test above), so this bound cannot see
+    // it. It catches gross retention, e.g. a world kept alive by a cache or listener. Measured growth is ~5-10 MB.
+    expect(growthMb).toBeLessThan(50);
   });
 });
 ```
@@ -1928,7 +1946,10 @@ export class Simulation {
     return out;
   }
 
-  /** Frees all WASM memory. Idempotent. Every vehicle controller must be removed before the world is freed. */
+  /**
+   * Frees all WASM memory eagerly. Idempotent. Controllers are removed first; Rapier 0.21's `World.free()` would
+   * also free them, so that is defence in depth. What matters is one prompt `world.free()` per world.
+   */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;

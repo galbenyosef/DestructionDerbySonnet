@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ARENA, CAR, CAR_FORWARD, CAR_RIGHT, CAR_UP, DRIVE } from '../src/shared/constants';
 import { NEUTRAL_INPUT, type CarInput } from '../src/shared/input';
 import { quatFromYaw, quatRotate, vdot, vlen, vsub } from '../src/shared/math';
@@ -345,7 +345,23 @@ describe('Simulation: rosters, inputs and lifecycle', () => {
     expect(() => sim.step()).toThrow(/disposed/i);
   });
 
-  it('does not leak memory when simulations are created and destroyed repeatedly', () => {
+  it('dispose releases the Rapier world eagerly: every controller and the world are freed exactly once', () => {
+    const sim = new Simulation([0, 1, 2]);
+    // Observe the real native objects (spyOn calls through, nothing is stubbed). Rapier 0.21 would also reclaim
+    // orphaned objects from GC finalizers, but those are driven by JS heap pressure, not by the wasm memory a
+    // world occupies, so a server that rebuilds a world every round must free eagerly.
+    const world = Reflect.get(sim, 'world') as { free(): void };
+    const rigs = Reflect.get(sim, 'ordered') as Array<{ controller: { free(): void } }>;
+    const worldFree = vi.spyOn(world, 'free');
+    const controllerFrees = rigs.map((rig) => vi.spyOn(rig.controller, 'free'));
+    sim.dispose();
+    sim.dispose(); // idempotent: no second free
+    expect(worldFree).toHaveBeenCalledTimes(1);
+    expect(controllerFrees).toHaveLength(3);
+    for (const spy of controllerFrees) expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps memory bounded over repeated create/dispose cycles (coarse smoke check)', () => {
     const cycle = (): void => {
       const s = new Simulation([0, 1, 2, 3, 4, 5, 6, 7]);
       for (let i = 0; i < 10; i++) s.step();
@@ -355,6 +371,8 @@ describe('Simulation: rosters, inputs and lifecycle', () => {
     const before = process.memoryUsage().rss;
     for (let i = 0; i < 300; i++) cycle();
     const growthMb = (process.memoryUsage().rss - before) / 1048576;
-    expect(growthMb).toBeLessThan(50); // without removeVehicleController this grows by ~150 MB
+    // Coarse on purpose: a missing free() only delays reclamation (see the test above), so this bound cannot see
+    // it. It catches gross retention, e.g. a world kept alive by a cache or listener. Measured growth is ~5-10 MB.
+    expect(growthMb).toBeLessThan(50);
   });
 });

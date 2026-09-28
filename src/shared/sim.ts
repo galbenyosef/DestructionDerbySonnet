@@ -102,7 +102,10 @@ export class Simulation {
     return out;
   }
 
-  /** Frees all WASM memory. Idempotent. Every vehicle controller must be removed before the world is freed. */
+  /**
+   * Frees all WASM memory eagerly. Idempotent. Controllers are removed first; Rapier 0.21's `World.free()` would
+   * also free them, so that is defence in depth. What matters is one prompt `world.free()` per world.
+   */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
