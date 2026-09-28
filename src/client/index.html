@@ -6,14 +6,22 @@
     <title>Wreckyard</title>
     <link rel="icon" href="data:," />
     <style>
+      :root {
+        --bg: #0b1226;
+        --ink: #dfe7ff;
+        --muted: #8fa0c8;
+        --panel: rgba(13, 20, 42, 0.86);
+        --line: rgba(160, 180, 255, 0.22);
+        --accent: #ff7a1a;
+      }
       html,
       body {
         margin: 0;
         height: 100%;
-        background: #0b1226;
+        background: var(--bg);
         overflow: hidden;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        color: #dfe7ff;
+        color: var(--ink);
+        font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
       }
       #game {
         position: fixed;
@@ -28,17 +36,211 @@
         top: 12px;
         margin: 0;
         max-width: calc(100vw - 32px);
-        font-size: 13px;
-        line-height: 1.5;
+        font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
         text-shadow: 0 1px 2px #000;
         white-space: pre-wrap;
         pointer-events: none;
+      }
+      #ui {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+      }
+      #ui button,
+      #ui input {
+        pointer-events: auto;
+      }
+
+      .menu {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: min(420px, calc(100vw - 32px));
+        box-sizing: border-box;
+        padding: 28px 28px 22px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(6px);
+        pointer-events: auto;
+      }
+      .menu h1 {
+        margin: 0;
+        font-size: 34px;
+        letter-spacing: 0.18em;
+        color: #fff;
+      }
+      .menu .tag {
+        margin: 4px 0 18px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .menu label {
+        display: block;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      .menu input {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 6px;
+        padding: 10px 12px;
+        font: inherit;
+        font-size: 16px;
+        color: var(--ink);
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      .menu input:focus-visible,
+      .menu button:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .swatches {
+        display: flex;
+        gap: 8px;
+        margin: 14px 0;
+      }
+      .swatch {
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border-radius: 50%;
+        border: 2px solid transparent;
+        cursor: pointer;
+      }
+      .swatch[aria-checked='true'] {
+        border-color: #fff;
+        box-shadow: 0 0 0 2px var(--accent);
+      }
+      .menu .row {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .menu .row input {
+        flex: none;
+        width: 110px;
+        margin-top: 0;
+        text-align: center;
+        text-transform: uppercase;
+        letter-spacing: 0.3em;
+      }
+      .menu button {
+        flex: 1;
+        padding: 11px 14px;
+        font: inherit;
+        font-weight: 600;
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .menu button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #1a0d00;
+      }
+      .menu button:hover {
+        filter: brightness(1.15);
+      }
+      .menu .error {
+        min-height: 1.3em;
+        margin: 12px 0 0;
+        color: #ff8a8a;
+        font-size: 13px;
+      }
+      .menu .hint {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .hud {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .hud-room {
+        position: absolute;
+        left: 16px;
+        top: 12px;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        padding: 6px 10px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-size: 13px;
+      }
+      .hud-room button {
+        padding: 3px 8px;
+        font: inherit;
+        font-size: 12px;
+        color: var(--ink);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .hud-players {
+        position: absolute;
+        right: 16px;
+        top: 12px;
+        min-width: 150px;
+        margin: 0;
+        padding: 8px 12px;
+        list-style: none;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-size: 13px;
+      }
+      .hud-players li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 2px 0;
+      }
+      .hud-players .chip {
+        flex: none;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+      }
+      .hud-players .you {
+        color: var(--accent);
+        font-size: 11px;
+      }
+      .hud-stats {
+        position: absolute;
+        left: 16px;
+        bottom: 12px;
+        font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: var(--muted);
+        text-shadow: 0 1px 2px #000;
+      }
+      .hud-notice {
+        position: absolute;
+        left: 50%;
+        bottom: 40px;
+        transform: translateX(-50%);
+        font-size: 15px;
+        text-shadow: 0 1px 3px #000;
       }
     </style>
   </head>
   <body>
     <canvas id="game"></canvas>
-    <pre id="hud">loading…</pre>
+    <pre id="hud"></pre>
+    <div id="ui"></div>
     <script type="module" src="./main.ts"></script>
   </body>
 </html>

@@ -73,6 +73,16 @@ export function forwardSpeed(body: RAPIER.RigidBody): number {
   return vdot(body.linvel(), quatRotate(body.rotation(), CAR_FORWARD));
 }
 
+/** Rapier steering angle in radians (positive = left) for a steer input in [-1, 1] at a forward speed in m/s. */
+export function steeringAngle(steer: number, forwardSpeed: number): number {
+  const steerMax = lerp(
+    DRIVE.MAX_STEER,
+    DRIVE.MAX_STEER_FAST,
+    clamp(Math.abs(forwardSpeed) / DRIVE.STEER_FADE_SPEED, 0, 1),
+  );
+  return DRIVE.STEER_SIGN * clamp(steer, -1, 1) * steerMax;
+}
+
 /** Turns the car's current input into wheel forces. Arithmetic only — no trig on the per-tick path. */
 export function driveCar(rig: CarRig): void {
   const { controller: c, body, input } = rig;
@@ -87,8 +97,7 @@ export function driveCar(rig: CarRig): void {
     if (vf > 1) brake = DRIVE.BRAKE * -t; // moving forwards: brake first, reverse once stopped
     else engine = t * DRIVE.ENGINE * DRIVE.REVERSE_SCALE * clamp(1 + vf / (DRIVE.MAX_SPEED * 0.4), 0, 1);
   }
-  const steerMax = lerp(DRIVE.MAX_STEER, DRIVE.MAX_STEER_FAST, clamp(Math.abs(vf) / DRIVE.STEER_FADE_SPEED, 0, 1));
-  const steering = DRIVE.STEER_SIGN * clamp(input.steer, -1, 1) * steerMax;
+  const steering = steeringAngle(input.steer, vf);
   for (const i of FRONT_WHEELS) {
     c.setWheelSteering(i, steering);
     c.setWheelBrake(i, brake);
