@@ -177,7 +177,7 @@ export interface InputPacket {
   input: CarInput;
 }
 
-export function encodeInput(seq: number, input: CarInput): Uint8Array {
+export function encodeInput(seq: number, input: CarInput): Uint8Array<ArrayBuffer> {
   const out = new Uint8Array(8);
   const dv = new DataView(out.buffer);
   const p = packInput(input);
