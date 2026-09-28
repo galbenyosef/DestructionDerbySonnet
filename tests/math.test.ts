@@ -6,6 +6,7 @@ import {
   quatConjugate,
   quatFromYaw,
   quatIntegrate,
+  quatMul,
   quatNlerp,
   quatNormalize,
   quatRotate,
@@ -102,5 +103,26 @@ describe('quaternions', () => {
     const f = quatRotate(q, { x: 1, y: 0, z: 0 });
     expect(f.x).toBeCloseTo(Math.cos(1), 3);
     expect(f.z).toBeCloseTo(-Math.sin(1), 3);
+  });
+});
+
+describe('quatMul', () => {
+  it('composes rotations: the right operand is applied first', () => {
+    const a = quatFromYaw(0.3);
+    const b = quatFromYaw(0.5);
+    const v = { x: 1, y: 0, z: 0 };
+    const composed = quatRotate(quatMul(a, b), v);
+    const stepwise = quatRotate(a, quatRotate(b, v));
+    expect(composed.x).toBeCloseTo(stepwise.x, 6);
+    expect(composed.z).toBeCloseTo(stepwise.z, 6);
+  });
+
+  it('has the identity as neutral element and the conjugate as inverse', () => {
+    const q = quatNormalize({ x: 0.1, y: 0.7, z: -0.2, w: 0.6 });
+    const same = quatMul(QUAT_IDENTITY, q);
+    expect(same).toEqual(q);
+    const inv = quatMul(q, quatConjugate(q));
+    expect(inv.w).toBeCloseTo(1, 9);
+    expect(Math.abs(inv.x) + Math.abs(inv.y) + Math.abs(inv.z)).toBeLessThan(1e-9);
   });
 });

@@ -50,6 +50,14 @@ export function quatNormalize(q: Quat): Quat {
   return { x: q.x / n, y: q.y / n, z: q.z / n, w: q.w / n };
 }
 
+/** Hamilton product a ⊗ b: rotating by the result equals rotating by `b` first, then by `a`. */
+export const quatMul = (a: Quat, b: Quat): Quat => ({
+  x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+  y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+  z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+  w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
+});
+
 /** Normalised linear interpolation along the shortest path. */
 export function quatNlerp(a: Quat, b: Quat, t: number): Quat {
   const dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
