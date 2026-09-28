@@ -118,3 +118,13 @@ export const NET = {
   INTERP_DELAY_MS: 100,
   MAX_EXTRAPOLATION_MS: 250,
 } as const;
+
+/**
+ * Locks `DRIVE`, `TIRE` and `SUSPENSION`. The offline sandbox edits them live through its tuning panel; every other
+ * route calls this at start-up so nothing can change the shared simulation's physics behind the server's back.
+ */
+export function freezeTuning(): void {
+  Object.freeze(DRIVE);
+  Object.freeze(TIRE);
+  Object.freeze(SUSPENSION);
+}
