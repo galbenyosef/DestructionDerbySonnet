@@ -63,8 +63,18 @@ export class Lobby {
     player.room?.removePlayer(player);
   }
 
+  /** Steps every room. A room that throws is closed on its own; it never takes the other rooms down with it. */
   tickAll(): void {
-    for (const room of [...this.rooms.values()]) room.step();
+    for (const room of [...this.rooms.values()]) {
+      try {
+        room.step();
+      } catch (err) {
+        console.error(`room ${room.code} failed and was closed:`, err);
+        this.rooms.delete(room.code);
+        for (const player of room.seated()) player.close(1011, 'internal error');
+        room.dispose();
+      }
+    }
   }
 
   dispose(): void {

@@ -107,6 +107,8 @@ export const NET = {
   MAX_BUFFERED_BYTES: 64 * 1024,
   MAX_PAYLOAD_BYTES: 1024,
   HEARTBEAT_MS: 30_000,
+  /** A socket that has not joined a room within this long is closed (it would otherwise hold a connection slot forever). */
+  HELLO_TIMEOUT_MS: 10_000,
   NAME_MAX: 16,
   ROOM_CODE_LENGTH: 4,
   ROOM_CODE_ALPHABET: 'ABCDEFGHJKLMNPQRSTUVWXYZ',

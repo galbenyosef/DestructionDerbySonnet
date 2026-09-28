@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ARENA, NET } from '../../src/shared/constants';
 import { initPhysics } from '../../src/shared/physics';
 import { Lobby, type JoinResult } from '../../src/server/lobby';
@@ -111,6 +111,29 @@ describe('Lobby lifecycle', () => {
     lobby.leave(b); // harmless
     expect(lobby.roomCount).toBe(0);
     expect(lobby.getRoom(room.code)).toBeUndefined();
+  });
+
+  it('isolates a room whose tick throws: its players are closed, the room is dropped, other rooms keep running', () => {
+    const lobby = makeLobby();
+    const sockets = [new FakeSocket(), new FakeSocket()];
+    const players = sockets.map((s) => new Player(nextId++, s));
+    const broken = ok(lobby.createPrivate(players[0]!)).room;
+    ok(lobby.createPrivate(players[1]!));
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(broken, 'step').mockImplementation(() => {
+      throw new Error('wasm panic');
+    });
+    expect(() => lobby.tickAll()).not.toThrow();
+    expect(sockets[0]!.closed).toEqual({ code: 1011, reason: 'internal error' });
+    expect(lobby.getRoom(broken.code)).toBeUndefined();
+    expect(lobby.roomCount).toBe(1);
+    expect(log).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < NET.REBUILD_DELAY_TICKS; i++) lobby.tickAll();
+    expect(sockets[1]!.json().some((m) => m.t === 'roster')).toBe(true); // the healthy room still runs
+    expect(sockets[1]!.closed).toBeNull();
+    log.mockRestore();
+    lobby.leave(players[0]!); // the late socket-close event of a failed room is harmless
+    expect(lobby.roomCount).toBe(1);
   });
 
   it('steps every room on tickAll', () => {

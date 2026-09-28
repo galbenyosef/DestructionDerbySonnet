@@ -173,6 +173,21 @@ describe('hostile and broken clients', () => {
     await ok.waitFor(() => ok.welcome());
   });
 
+  it('drops sockets that never say hello, freeing their connection slot, and leaves talkative ones alone', async () => {
+    const quick = createGameServer({ helloTimeoutMs: 150 });
+    const p = await quick.listen(0, '127.0.0.1');
+    const idle = await TestClient.connect(p);
+    const chatty = await TestClient.connect(p);
+    chatty.hello();
+    await chatty.waitFor(() => chatty.welcome(), 3000, 'welcome for the talkative client');
+    await idle.waitFor(() => idle.closed, 3000, 'close of the silent socket');
+    expect(idle.closed).toMatchObject({ code: 1008 });
+    expect(chatty.closed).toBeNull();
+    expect(quick.stats().connections).toBe(1);
+    chatty.close();
+    await quick.close();
+  });
+
   it('refuses connections beyond the connection limit', async () => {
     const small = createGameServer({ maxConnections: 2 });
     const p = await small.listen(0, '127.0.0.1');

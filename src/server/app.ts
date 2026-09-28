@@ -15,6 +15,8 @@ export interface GameServerOptions {
   allowedOrigins?: readonly string[];
   maxRooms?: number;
   maxConnections?: number;
+  /** Milliseconds a new socket may stay silent before it is closed; defaults to NET.HELLO_TIMEOUT_MS. */
+  helloTimeoutMs?: number;
 }
 
 export interface ServerStats {
@@ -69,6 +71,7 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
   const lobby = new Lobby({ maxRooms: options.maxRooms ?? 12 });
   const staticHandler = options.staticDir ? createStaticHandler(options.staticDir) : null;
   const maxConnections = options.maxConnections ?? 200;
+  const helloTimeoutMs = options.helloTimeoutMs ?? NET.HELLO_TIMEOUT_MS;
   const startedAt = Date.now();
   const tickTimes: number[] = [];
   let connections = 0;
@@ -189,6 +192,9 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
         /* closing */
       }
     }, NET.HEARTBEAT_MS);
+    const helloTimer = setTimeout(() => {
+      if (!player.joined) ws.close(1008, 'no hello');
+    }, helloTimeoutMs);
     ws.on('message', (data: RawData, isBinary: boolean) => {
       try {
         if (isBinary) onBinary(player, data, inputBucket);
@@ -200,6 +206,7 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     });
     ws.on('close', () => {
       clearInterval(heartbeat);
+      clearTimeout(helloTimer);
       connections--;
       lobby.leave(player);
     });
