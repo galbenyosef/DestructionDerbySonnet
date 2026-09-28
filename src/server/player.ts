@@ -102,6 +102,9 @@ export class Player {
   }
 
   resetInputState(): void {
+    // Inputs received before the reset are discarded, never applied to the new world: acknowledge them, so clients
+    // replay only the inputs that are genuinely still in flight.
+    if (this.newestSeq !== null) this.ackSeq = this.newestSeq;
     this.queue = [];
     this.newestSeq = null;
     this.starved = 0;

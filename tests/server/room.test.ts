@@ -112,6 +112,15 @@ describe('Room world rebuild and snapshots', () => {
     expect(last.cars[0]!.throttle).toBe(1);
   });
 
+  it('acknowledges inputs received before a rebuild, so the first snapshot does not claim they are still pending', () => {
+    const { room } = makeRoom();
+    const a = join(room);
+    for (let seq = 1; seq <= 10; seq++) a.player.pushInput(seq, drive);
+    steps(room, NET.REBUILD_DELAY_TICKS + 2);
+    const first = snapshots(a.socket)[0]!;
+    expect(first.ackSeq).toBe(10);
+  });
+
   it('neutralises the input echo after the input stream stalls', () => {
     const { room } = makeRoom();
     const a = join(room);

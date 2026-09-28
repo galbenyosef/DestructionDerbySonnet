@@ -65,6 +65,23 @@ describe('Player input queue', () => {
     expect(player.pushInput(1, drive)).toBe(true);
   });
 
+  it('resetInputState acknowledges the inputs it discards, so clients replay only what is still in flight', () => {
+    const { player } = make();
+    player.pushInput(5, drive);
+    player.pushInput(6, drive);
+    player.pushInput(7, drive);
+    player.nextInput(); // consumes 5
+    player.resetInputState(); // 6 and 7 are thrown away, never applied to the next world
+    expect(player.ackSeq).toBe(7);
+    expect(player.pushInput(1, drive)).toBe(true); // a fresh stream may start anywhere
+  });
+
+  it('resetInputState keeps the acknowledgement when nothing was ever received', () => {
+    const { player } = make();
+    player.resetInputState();
+    expect(player.ackSeq).toBe(0);
+  });
+
   it('counts silent ticks and resets the counter when an input arrives', () => {
     const { player } = make();
     player.nextInput();
