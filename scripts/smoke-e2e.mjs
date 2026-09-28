@@ -73,9 +73,11 @@ const kill = (p) => p.child.kill('SIGTERM');
   const vite = start('npx', ['vite', '--port', '5173', '--strictPort']);
   try {
     await waitFor(() => server.output().includes('listening on :8080'), 'tsx server to listen');
-    await waitFor(async () => (await fetch('http://127.0.0.1:5173/')).ok, 'vite dev to serve');
-    const html = await (await fetch('http://127.0.0.1:5173/')).text();
-    const viaProxy = await echo('ws://127.0.0.1:5173/ws', 'dev-echo');
+    // `localhost`, not 127.0.0.1: Vite binds whichever address `localhost` resolves to first (::1 on some
+    // machines), and browsers plus the dev proxy also use `localhost` (they try every address).
+    await waitFor(async () => (await fetch('http://localhost:5173/')).ok, 'vite dev to serve');
+    const html = await (await fetch('http://localhost:5173/')).text();
+    const viaProxy = await echo('ws://localhost:5173/ws', 'dev-echo');
     if (!html.includes('Wreckyard')) throw new Error('vite did not serve the Wreckyard page');
     results.push(`OK   dev flow: vite page served, ws via /ws proxy echo=${viaProxy}`);
   } catch (err) {
