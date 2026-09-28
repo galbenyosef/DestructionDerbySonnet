@@ -27,7 +27,6 @@ export async function startSandbox(canvas: HTMLCanvasElement, hud: HTMLElement):
   const views = COLORS.map((c) => new CarView(c));
   for (const v of views) gs.scene.add(v.group);
   const chase = new ChaseCamera();
-  const keyboard = new KeyboardInput();
   const stepper = new FixedStepper(PHYSICS.DT);
   const timer = new THREE.Timer();
   timer.connect(document);
@@ -44,10 +43,10 @@ export async function startSandbox(canvas: HTMLCanvasElement, hud: HTMLElement):
     stepper.reset();
     chase.reset();
   };
-  const onKey = (e: KeyboardEvent): void => {
-    if (e.code === 'KeyR') rebuild();
-  };
-  window.addEventListener('keydown', onKey);
+  // R goes through KeyboardInput so it works while the tuning panel has focus (see its capture-phase note).
+  const keyboard = new KeyboardInput(window, undefined, (code) => {
+    if (code === 'KeyR') rebuild();
+  });
 
   // Live tuning. DRIVE / TIRE are read every tick; SUSPENSION needs "Rebuild". Copy the JSON into constants.ts to keep changes.
   const gui = new GUI({ title: 'Wreckyard tuning (sandbox only)' });
@@ -134,7 +133,6 @@ export async function startSandbox(canvas: HTMLCanvasElement, hud: HTMLElement):
   const stop = (): void => {
     stopped = true;
     cancelAnimationFrame(raf);
-    window.removeEventListener('keydown', onKey);
     keyboard.dispose();
     gui.destroy();
     for (const v of views) v.dispose();

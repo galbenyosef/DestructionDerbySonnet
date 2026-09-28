@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { KeyboardInput, SteerRamp, mapGamepad, type GamepadLike } from '../../src/client/game/input';
+import { KeyboardInput, SteerRamp, isEditableTarget, mapGamepad, type GamepadLike } from '../../src/client/game/input';
 
 describe('SteerRamp', () => {
   it('ramps toward the target at the attack rate', () => {
@@ -58,10 +58,21 @@ describe('mapGamepad', () => {
   it('treats NaN axes as centred', () => {
     expect(mapGamepad(pad([NaN, NaN], []))).toBeNull();
   });
+
+  it('ignores a resting trigger that reports a small non-zero value', () => {
+    const buttons = Array.from({ length: 8 }, () => btn(0));
+    buttons[7] = { value: 0.03, pressed: false }; // worn triggers rest at 0.01-0.05
+    expect(mapGamepad(pad([0, 0], buttons))).toBeNull();
+    buttons[7] = { value: 0.06, pressed: false }; // just outside the dead zone
+    expect(mapGamepad(pad([0, 0], buttons))?.throttle).toBeCloseTo(0.06, 6);
+  });
 });
 
-function keyEvent(type: 'keydown' | 'keyup', code: string): Event {
-  return Object.assign(new Event(type, { cancelable: true }), { code });
+/** Builds a key event; `props` shadows read-only fields such as `target` the way a real dispatch would set them. */
+function keyEvent(type: 'keydown' | 'keyup', code: string, props: Record<string, unknown> = {}): Event {
+  const e = Object.assign(new Event(type, { cancelable: true }), { code });
+  for (const [k, v] of Object.entries(props)) Object.defineProperty(e, k, { value: v, configurable: true });
+  return e;
 }
 
 describe('KeyboardInput', () => {
@@ -116,6 +127,104 @@ describe('KeyboardInput', () => {
     buttons[7] = btn(1);
     const kb = new KeyboardInput(target, () => pad([0, 0], buttons));
     expect(kb.sample(1 / 60).throttle).toBe(1);
+    kb.dispose();
+  });
+
+  it('lets the keyboard drive when the pad only reports a resting trigger', () => {
+    const target = new EventTarget();
+    const buttons = Array.from({ length: 8 }, () => btn(0));
+    buttons[7] = { value: 0.03, pressed: false };
+    const kb = new KeyboardInput(target, () => pad([0, 0], buttons));
+    target.dispatchEvent(keyEvent('keydown', 'KeyW'));
+    expect(kb.sample(1 / 60).throttle).toBe(1);
+    kb.dispose();
+  });
+});
+
+describe('isEditableTarget', () => {
+  const el = (props: Record<string, unknown>): EventTarget => props as unknown as EventTarget;
+
+  it('recognises text-entry elements only', () => {
+    expect(isEditableTarget(el({ tagName: 'INPUT' }))).toBe(true);
+    expect(isEditableTarget(el({ tagName: 'textarea' }))).toBe(true);
+    expect(isEditableTarget(el({ tagName: 'SELECT' }))).toBe(true);
+    expect(isEditableTarget(el({ tagName: 'DIV', isContentEditable: true }))).toBe(true);
+    expect(isEditableTarget(el({ tagName: 'BUTTON' }))).toBe(false);
+    expect(isEditableTarget(el({ tagName: 'CANVAS' }))).toBe(false);
+    expect(isEditableTarget(new EventTarget())).toBe(false);
+    expect(isEditableTarget(null)).toBe(false);
+  });
+});
+
+// The sandbox's lil-gui panel stops keydown/keyup from bubbling, and any click leaves focus inside it.
+describe('KeyboardInput with the tuning panel focused', () => {
+  const field = { tagName: 'INPUT' };
+
+  it('listens in the capture phase so a panel that stops propagation cannot hide key events', () => {
+    const registered: Array<[string, boolean]> = [];
+    const fake = {
+      addEventListener: (type: string, _listener: unknown, options?: boolean | AddEventListenerOptions) => {
+        registered.push([type, typeof options === 'object' ? options.capture === true : options === true]);
+      },
+      removeEventListener: () => undefined,
+    } as unknown as EventTarget;
+    const kb = new KeyboardInput(fake, () => null);
+    expect(registered.filter(([type]) => type === 'keydown' || type === 'keyup')).toEqual([
+      ['keydown', true],
+      ['keyup', true],
+    ]);
+    kb.dispose();
+  });
+
+  it('detaches every listener it attached', () => {
+    const target = new EventTarget();
+    const kb = new KeyboardInput(target, () => null);
+    kb.dispose();
+    target.dispatchEvent(keyEvent('keydown', 'KeyW'));
+    expect(kb.sample(1 / 60).throttle).toBe(0);
+  });
+
+  it('ignores game keys typed into an input field', () => {
+    const target = new EventTarget();
+    const kb = new KeyboardInput(target, () => null);
+    target.dispatchEvent(keyEvent('keydown', 'KeyW', { target: field }));
+    target.dispatchEvent(keyEvent('keydown', 'KeyD', { target: field }));
+    expect(kb.sample(1 / 60)).toMatchObject({ throttle: 0, steer: 0 });
+    kb.dispose();
+  });
+
+  it('always honours a key release, even one that comes from an input field', () => {
+    const target = new EventTarget();
+    const kb = new KeyboardInput(target, () => null);
+    target.dispatchEvent(keyEvent('keydown', 'KeyW'));
+    target.dispatchEvent(keyEvent('keyup', 'KeyW', { target: field }));
+    expect(kb.sample(1 / 60).throttle).toBe(0);
+    kb.dispose();
+  });
+
+  it('ignores keys pressed with ctrl or alt, and drops held keys when cmd goes down', () => {
+    const target = new EventTarget();
+    const kb = new KeyboardInput(target, () => null);
+    target.dispatchEvent(keyEvent('keydown', 'KeyW', { ctrlKey: true }));
+    target.dispatchEvent(keyEvent('keydown', 'KeyW', { altKey: true }));
+    expect(kb.sample(1 / 60).throttle).toBe(0);
+    target.dispatchEvent(keyEvent('keydown', 'KeyW'));
+    expect(kb.sample(1 / 60).throttle).toBe(1);
+    target.dispatchEvent(keyEvent('keydown', 'MetaLeft', { metaKey: true })); // macOS then swallows the key-ups
+    expect(kb.sample(1 / 60).throttle).toBe(0);
+    kb.dispose();
+  });
+
+  it('reports each physical key press once to the onPress callback', () => {
+    const target = new EventTarget();
+    const pressed: string[] = [];
+    const kb = new KeyboardInput(target, () => null, (code) => pressed.push(code));
+    target.dispatchEvent(keyEvent('keydown', 'KeyR'));
+    target.dispatchEvent(keyEvent('keydown', 'KeyR', { repeat: true }));
+    target.dispatchEvent(keyEvent('keydown', 'KeyR', { target: field }));
+    target.dispatchEvent(keyEvent('keydown', 'KeyR', { metaKey: true }));
+    target.dispatchEvent(keyEvent('keydown', 'KeyR', { ctrlKey: true }));
+    expect(pressed).toEqual(['KeyR']);
     kb.dispose();
   });
 });

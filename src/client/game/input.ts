@@ -29,6 +29,7 @@ export interface GamepadLike {
 export type GamepadReader = () => GamepadLike | null;
 
 const DEAD_ZONE = 0.12;
+const TRIGGER_DEAD_ZONE = 0.05; // worn triggers rest at 0.01-0.05 and must not count as "the pad is in use"
 const finite = (v: number | undefined): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
 /** Standard mapping: left stick X steers, RT drives, LT brakes/reverses, A or B is the handbrake. */
@@ -36,7 +37,8 @@ export function mapGamepad(pad: GamepadLike | null): CarInput | null {
   if (!pad) return null;
   const ax = finite(pad.axes[0]);
   const steer = Math.abs(ax) < DEAD_ZONE ? 0 : (ax - Math.sign(ax) * DEAD_ZONE) / (1 - DEAD_ZONE);
-  const throttle = clamp(finite(pad.buttons[7]?.value) - finite(pad.buttons[6]?.value), -1, 1);
+  const triggers = clamp(finite(pad.buttons[7]?.value) - finite(pad.buttons[6]?.value), -1, 1);
+  const throttle = Math.abs(triggers) < TRIGGER_DEAD_ZONE ? 0 : triggers;
   const handbrake = (pad.buttons[0]?.pressed ?? false) || (pad.buttons[1]?.pressed ?? false);
   if (steer === 0 && throttle === 0 && !handbrake) return null; // idle: let the keyboard win
   return { throttle, steer: clamp(steer, -1, 1), handbrake };
@@ -50,14 +52,30 @@ const defaultGamepadReader: GamepadReader = () => {
 
 const PREVENT_DEFAULT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
 
+/** True for elements the player types into (the tuning panel's number fields); game keys must not fire there. */
+export function isEditableTarget(target: EventTarget | null): boolean {
+  const el = target as { tagName?: unknown; isContentEditable?: unknown } | null;
+  if (!el || typeof el.tagName !== 'string') return false;
+  const tag = el.tagName.toUpperCase();
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable === true;
+}
+
 export class KeyboardInput {
   private readonly keys = new Set<string>();
   private readonly ramp = new SteerRamp();
   private readonly onKeyDown = (e: Event): void => {
-    const code = (e as KeyboardEvent).code;
-    if (PREVENT_DEFAULT.has(code)) e.preventDefault();
-    this.keys.add(code);
+    const ev = e as KeyboardEvent;
+    if (isEditableTarget(ev.target)) return;
+    if (ev.metaKey) {
+      this.keys.clear(); // macOS swallows the key-up of anything pressed while cmd is held
+      return;
+    }
+    if (ev.ctrlKey || ev.altKey) return;
+    if (PREVENT_DEFAULT.has(ev.code)) ev.preventDefault();
+    this.keys.add(ev.code);
+    if (!ev.repeat) this.onPress?.(ev.code);
   };
+  /** Unconditional: a release must always register, wherever focus is. */
   private readonly onKeyUp = (e: Event): void => {
     this.keys.delete((e as KeyboardEvent).code);
   };
@@ -65,12 +83,18 @@ export class KeyboardInput {
     this.keys.clear();
   };
 
+  /**
+   * Key listeners run in the capture phase: the sandbox's lil-gui panel stops key events from bubbling and any
+   * click leaves focus inside it, so bubble-phase listeners would miss releases (stuck throttle) or presses.
+   * `onPress` fires once per physical press (not for auto-repeat, typing in a field, or modifier combos).
+   */
   constructor(
     private readonly target: EventTarget = window,
     private readonly readPad: GamepadReader = defaultGamepadReader,
+    private readonly onPress?: (code: string) => void,
   ) {
-    target.addEventListener('keydown', this.onKeyDown);
-    target.addEventListener('keyup', this.onKeyUp);
+    target.addEventListener('keydown', this.onKeyDown, { capture: true });
+    target.addEventListener('keyup', this.onKeyUp, { capture: true });
     target.addEventListener('blur', this.onBlur);
   }
 
@@ -87,8 +111,8 @@ export class KeyboardInput {
   }
 
   dispose(): void {
-    this.target.removeEventListener('keydown', this.onKeyDown);
-    this.target.removeEventListener('keyup', this.onKeyUp);
+    this.target.removeEventListener('keydown', this.onKeyDown, { capture: true });
+    this.target.removeEventListener('keyup', this.onKeyUp, { capture: true });
     this.target.removeEventListener('blur', this.onBlur);
   }
 }
