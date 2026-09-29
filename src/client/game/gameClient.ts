@@ -21,7 +21,7 @@ import { MatchState } from './matchState';
 import { NameTag } from './nameTag';
 import type { GameScene } from './scene';
 import { CanvasMarks } from './skidMarks';
-import { SpectatorCamera } from './spectator';
+import { SpectatorCamera, cycleDirection } from './spectator';
 import { FixedStepper } from './stepper';
 
 export interface GameClientOptions {
@@ -39,16 +39,6 @@ export interface GameClientOptions {
   settings: Settings;
   onSettings(settings: Settings): void;
 }
-
-/** Keys that switch the car the spectator camera follows (they steer when you drive, so they are free once you are out). */
-const CYCLE_KEYS: Readonly<Record<string, 1 | -1>> = {
-  ArrowLeft: -1,
-  KeyA: -1,
-  KeyQ: -1,
-  ArrowRight: 1,
-  KeyD: 1,
-  KeyE: 1,
-};
 
 /**
  * Sends inputs at 60 Hz. In 'predict' mode (default) it runs the shared simulation locally for every car, rolls back
@@ -321,8 +311,8 @@ export class GameClient {
       this.opts.hud.setStatsVisible(this.statsVisible);
       return;
     }
-    const direction = CYCLE_KEYS[code];
-    if (direction && !this.driving) this.spectator.cycle(this.lastPoses, direction);
+    const direction = cycleDirection(code);
+    if (direction !== 0 && !this.driving) this.spectator.cycle(this.lastPoses, direction);
   }
 
   private readonly frame = (ts: number): void => {
@@ -358,6 +348,8 @@ export class GameClient {
     // chase your own car while it runs; once it is a wreck (or you have none this round) orbit a car that still runs
     const mine = poses.find((p) => p.slot === this.mySlot && p.visible);
     this.driving = mine?.alive === true;
+    const bumper = this.keyboard.padCycle(); // read every frame, so a bumper held from earlier is not taken for a new press
+    if (bumper !== 0 && !this.driving) this.spectator.cycle(poses, bumper);
     const orbit = this.driving ? null : this.spectator.view(poses, dt);
     if (orbit) applyChaseView(this.opts.gs.camera, orbit);
     else if (mine) this.chase.update(this.opts.gs.camera, { pos: mine.pos, quat: mine.quat, speed: vlen(mine.linvel) }, dt);

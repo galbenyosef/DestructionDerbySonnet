@@ -148,7 +148,7 @@ export const ROUND = {
 } as const;
 
 export const NET = {
-  /** 2: rounds, hit/ko/scores/results messages, `you` in the roster. */
+  /** 3: the welcome carries the round's latest hits (`dents`). 2: rounds, hit/ko/scores/results messages, `you` in the roster. */
   PROTOCOL_VERSION: 3,
   /** The welcome message carries this many of the round's latest hits (a newcomer replays them to dent the cars). */
   MAX_HIT_LOG: 64,

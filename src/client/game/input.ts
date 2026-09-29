@@ -63,6 +63,7 @@ export function isEditableTarget(target: EventTarget | null): boolean {
 export class KeyboardInput {
   private readonly keys = new Set<string>();
   private readonly ramp = new SteerRamp();
+  private bumpers = { left: false, right: false };
   private readonly onKeyDown = (e: Event): void => {
     const ev = e as KeyboardEvent;
     if (isEditableTarget(ev.target)) return;
@@ -101,6 +102,19 @@ export class KeyboardInput {
   /** True while the key with this `KeyboardEvent.code` is held (the scoreboard shows while Tab is down). */
   isDown(code: string): boolean {
     return this.keys.has(code);
+  }
+
+  /**
+   * The gamepad's way of switching the car you watch: -1 for a press of the left bumper, 1 for the right one, 0 otherwise.
+   * Reports each press once; call it every frame so a bumper held from earlier does not count as a new press.
+   */
+  padCycle(): 1 | -1 | 0 {
+    const pad = this.readPad();
+    const left = pad?.buttons[4]?.pressed ?? false;
+    const right = pad?.buttons[5]?.pressed ?? false;
+    const direction = right && !this.bumpers.right ? 1 : left && !this.bumpers.left ? -1 : 0;
+    this.bumpers = { left, right };
+    return direction;
   }
 
   /** Samples the current input; advances the steering ramp by `dt` seconds. */

@@ -260,10 +260,16 @@
         color: var(--muted);
         font-size: 12px;
       }
-      .hud-board {
+      .hud-side {
         position: absolute;
         right: 16px;
         top: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 8px;
+      }
+      .hud-board {
         min-width: 190px;
         padding: 6px 10px;
         background: var(--panel);
@@ -316,9 +322,6 @@
         font-variant-numeric: tabular-nums;
       }
       .hud-feed {
-        position: absolute;
-        right: 16px;
-        top: 190px;
         margin: 0;
         padding: 0;
         list-style: none;

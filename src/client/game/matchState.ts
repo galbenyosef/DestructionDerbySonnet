@@ -9,6 +9,7 @@ import type {
   ScoresMessage,
   WelcomeMessage,
 } from '../../shared/protocol';
+import { COMBAT } from '../../shared/constants';
 import type { Zone } from '../../shared/types';
 
 /** What the match screen needs to know about one car this frame (from the latest snapshot). */
@@ -108,7 +109,7 @@ export class MatchState {
     this.results = null;
     this.feed = [];
     this.resetRoundDamage();
-    if (w.phase) this.onPhase(w.phase);
+    if (w.phase) this.enter(w.phase); // already under way when you arrive: no GO! for a round that started minutes ago
   }
 
   /** A new round's cars. */
@@ -125,10 +126,15 @@ export class MatchState {
   }
 
   onPhase(p: PhaseMessage): void {
+    const wasLive = this.phase === 'live';
+    this.enter(p);
+    if (p.phase === 'live' && !wasLive) this.liveSince = this.now();
+  }
+
+  private enter(p: PhaseMessage): void {
     this.phase = p.phase;
     this.round = p.round;
     this.deadline = this.now() + p.remainingMs;
-    if (p.phase === 'live') this.liveSince = this.now();
   }
 
   onHit(h: HitMessage): void {
@@ -166,8 +172,8 @@ export class MatchState {
   /** The latest snapshot's cars, every frame. */
   onCars(cars: readonly CarFact[]): void {
     this.facts.clear();
-    const sane = (v: number): number => (Number.isFinite(v) ? Math.max(0, v) : 0);
-    for (const c of cars) this.facts.set(c.slot, { slot: c.slot, alive: c.alive, hp: sane(c.hp), speed: sane(c.speed) });
+    const sane = (v: number, max = Number.POSITIVE_INFINITY): number => (Number.isFinite(v) ? Math.min(max, Math.max(0, v)) : 0);
+    for (const c of cars) this.facts.set(c.slot, { slot: c.slot, alive: c.alive, hp: sane(c.hp, COMBAT.MAX_HP), speed: sane(c.speed) });
   }
 
   /** Slot of the car the camera follows while you are out or watching (-1: none). */
@@ -178,6 +184,7 @@ export class MatchState {
   view(): MatchView {
     const t = this.now();
     const remaining = Math.max(0, this.deadline - t);
+    const seconds = Math.max(1, Math.ceil(remaining / 1000)); // never 0 or negative while the phase message is the newest news
     const myFact = this.mySlot >= 0 ? this.facts.get(this.mySlot) : undefined;
     const meAlive = myFact ? myFact.alive : this.mySlot >= 0;
     const rows: BoardRow[] = [...this.players.values()].map((p) => {
@@ -200,13 +207,13 @@ export class MatchState {
     let clock = '';
     if (this.phase === 'countdown') {
       clockLabel = 'Starts in';
-      clock = String(Math.max(1, Math.ceil(remaining / 1000)));
+      clock = String(seconds);
     } else if (this.phase === 'live') {
       clockLabel = 'Time left';
       clock = clockText(remaining);
     } else if (this.phase === 'results') {
       clockLabel = 'Next round in';
-      clock = String(Math.max(1, Math.ceil(remaining / 1000)));
+      clock = String(seconds);
     }
     return {
       phase: this.phase,
@@ -222,15 +229,14 @@ export class MatchState {
         .slice(-FEED_MAX)
         .map((f) => ({ id: f.id, text: f.text, tone: f.tone, life: 1 - (t - f.at) / FEED_MS })),
       board: rows,
-      banner: this.banner(t, remaining, meAlive),
+      banner: this.banner(t, seconds, meAlive),
       flash: Math.max(0, 1 - (t - this.flashAt) / FLASH_MS) * this.flashPower,
     };
   }
 
-  private banner(t: number, remaining: number, meAlive: boolean): Banner | null {
+  private banner(t: number, seconds: number, meAlive: boolean): Banner | null {
     const name = (slot: number): string => this.players.get(slot)?.name ?? `Car ${slot + 1}`;
     if (this.phase === 'countdown') {
-      const seconds = Math.max(1, Math.ceil(remaining / 1000));
       return {
         kind: 'countdown',
         title: String(seconds),
@@ -248,7 +254,6 @@ export class MatchState {
     }
     if (this.phase === 'results') {
       const r = this.results;
-      const seconds = Math.max(1, Math.ceil(remaining / 1000));
       const title = !r ? 'Round over' : r.winner < 0 ? 'Draw' : `${r.rows.find((row) => row.slot === r.winner)?.name ?? name(r.winner)} wins`;
       const mine = r && this.mySlot >= 0 ? r.rows.find((row) => row.slot === this.mySlot) : undefined;
       const gained = mine ? ` · you scored ${mine.gained}` : '';

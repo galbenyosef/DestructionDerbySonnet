@@ -11,7 +11,7 @@ import { DentSurface, type Dent } from './dents';
  * (or the Task 4 rotation test had to be flipped), change this constant.
  */
 export const WHEEL_SPIN_SIGN = -1;
-const REST_SUSPENSION = 0.374; // measured settled suspension length
+export const REST_SUSPENSION = 0.374; // measured settled suspension length
 /** Body colour of a car that is out of the round. */
 export const WRECK_COLOR = 0x2a2b2e;
 

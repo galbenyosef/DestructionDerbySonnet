@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { COMBAT } from '../../shared/constants';
+import { ARENA, COMBAT } from '../../shared/constants';
 import { clamp, quatRotate, vadd, vdot, vlen } from '../../shared/math';
 import type { HitMessage, KoMessage } from '../../shared/protocol';
 import { mulberry32 } from '../../shared/random';
@@ -9,7 +9,7 @@ import type { LocalImpact } from '../net/prediction';
 import type { DrawPose } from '../net/session';
 import type { AudioEngine, EngineCar, Listener } from './audio';
 import { DamageBook } from './carDamage';
-import type { CarView } from './carView';
+import { REST_SUSPENSION, type CarView } from './carView';
 import { DebrisSystem } from './debris';
 import { ParticleSystem } from './particles';
 import { CameraShake, traumaForImpact } from './shake';
@@ -78,6 +78,8 @@ export class FxDirector {
   private readonly wentOutAt = new Map<number, number>();
   private readonly crashedAt = new Map<string, number>();
   private readonly localImpactAt = new Map<number, number>();
+  /** Collisions the server has told about (by the two cars and the tick): it tells each once per car in it, and they are played once. */
+  private readonly told = new Map<string, number>();
   private now = 0;
   /** Multiplies how many particles are emitted (the graphics preset). */
   private density = 1;
@@ -125,6 +127,7 @@ export class FxDirector {
     this.wentOutAt.clear();
     this.crashedAt.clear();
     this.localImpactAt.clear();
+    this.told.clear();
     for (const view of this.allViews()) view.restore();
   }
 
@@ -135,6 +138,10 @@ export class FxDirector {
     const other = h.victim === frame.mySlot ? h.attacker : h.victim; // what the local car ran into: another car, or -1 for a wall
     const covered = mine && this.now - (this.localImpactAt.get(other) ?? -1e9) < FX.LOCAL_COVERS;
     if (covered) return;
+    const key = `${Math.min(h.victim, h.attacker)}:${Math.max(h.victim, h.attacker)}:${h.tick}`;
+    if (this.told.has(key)) return; // the same collision, told for the other car in it
+    this.told.set(key, this.now);
+    for (const [k, at] of this.told) if (this.now - at > 2) this.told.delete(k);
     const pose = frame.poses.find((p) => p.slot === h.victim);
     if (!pose) return;
     const at = worldPoint(pose, { x: h.p[0], y: h.p[1], z: h.p[2] });
@@ -156,7 +163,7 @@ export class FxDirector {
   onLocalImpacts(impacts: readonly LocalImpact[], frame: Pick<FxFrame, 'poses' | 'listener'>): void {
     for (const i of impacts) {
       const pose = frame.poses.find((p) => p.slot === i.slot);
-      if (!pose) continue;
+      if (!pose?.alive) continue; // your own wreck being rammed is not a jolt for the camera that orbits somebody else
       const at = worldPoint(pose, i.point);
       this.localImpactAt.set(i.other, this.now);
       const real = i.kns * 1000 >= COMBAT.IMPACT_IMPULSE;
@@ -201,7 +208,7 @@ export class FxDirector {
 
   private allViews(): CarView[] {
     const views: CarView[] = [];
-    for (let slot = 0; slot < 8; slot++) {
+    for (let slot = 0; slot < ARENA.MAX_CARS; slot++) {
       const v = this.options.view(slot);
       if (v) views.push(v);
     }
@@ -306,11 +313,11 @@ export class FxDirector {
       throttle: p.throttle,
     });
     for (let i = 0; i < 4; i++) {
-      const wheel = worldPoint(p, wheelLocalPosition(i, 0.374));
+      const wheel = worldPoint(p, wheelLocalPosition(i, REST_SUSPENSION));
       this.marks.wheel(p.slot * 4 + i, wheel.x, wheel.z, i >= 2 ? strength : strength * 0.6);
     }
     if (p.grounded && speed > FX.DUST_SPEED) {
-      const rear = worldPoint(p, wheelLocalPosition(2 + Math.floor(this.random() * 2), 0.374)); // either rear wheel
+      const rear = worldPoint(p, wheelLocalPosition(2 + Math.floor(this.random() * 2), REST_SUSPENSION)); // either rear wheel
       for (let i = this.due(p.slot, 'dust', clamp(speed, 0, 20) * 0.8 + strength * 30, dt); i > 0; i--) {
         this.puff('dust', { x: rear.x, y: 0.15, z: rear.z }, 1.2, 0.6 + this.random() * 0.5, 0.35);
       }

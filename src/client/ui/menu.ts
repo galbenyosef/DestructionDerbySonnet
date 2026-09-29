@@ -70,7 +70,7 @@ export function showMenu(root: HTMLElement, options: MenuOptions = {}): Promise<
       <label>Volume<input id="m-volume" type="range" min="0" max="100" step="5" /></label>
       <label class="check"><input id="m-sound" type="checkbox" />Sound</label>
     </div>
-    <p class="hint">W/S throttle · A/D steer · Space handbrake · H horn · M sound · Tab scoreboard · F3 network</p>`;
+    <p class="hint">W/S throttle · A/D steer · Space handbrake · H horn · M sound · G graphics · Tab scoreboard · F3 network (Fn+F3 on a Mac)</p>`;
   root.append(menu);
 
   const q = <T extends HTMLElement>(selector: string): T => menu.querySelector<T>(selector)!;

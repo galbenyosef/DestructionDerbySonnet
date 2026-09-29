@@ -19,6 +19,19 @@ export function nextTarget(cars: readonly Followable[], current: number, directi
   return (running.findLast((c) => c.slot < current) ?? running[running.length - 1]!).slot;
 }
 
+/** Keys that switch the car the spectator camera follows (they steer when you drive, so they are free once you are out). */
+const CYCLE_KEYS: ReadonlyMap<string, 1 | -1> = new Map([
+  ['ArrowLeft', -1],
+  ['KeyA', -1],
+  ['KeyQ', -1],
+  ['ArrowRight', 1],
+  ['KeyD', 1],
+  ['KeyE', 1],
+]);
+
+/** Which way a key (a `KeyboardEvent.code`) switches the watched car: -1 previous, 1 next, 0 not a switching key. */
+export const cycleDirection = (code: string): 1 | -1 | 0 => CYCLE_KEYS.get(code) ?? 0;
+
 const ORBIT_RADIUS = 13;
 const ORBIT_HEIGHT = 6;
 const ORBIT_SPEED = 0.25; // rad/s: a lap every 25 s

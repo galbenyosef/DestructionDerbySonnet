@@ -32,12 +32,6 @@ export function createNameTag(text: string): THREE.Sprite {
   return sprite;
 }
 
-export function disposeNameTag(sprite: THREE.Sprite): void {
-  sprite.material.map?.dispose();
-  sprite.material.dispose();
-  sprite.removeFromParent();
-}
-
 /** Width and height of the health bar under a name, in metres. */
 export const HP_BAR = { width: 2.2, height: 0.2, y: 1.85 } as const;
 

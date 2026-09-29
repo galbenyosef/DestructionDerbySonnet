@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hexColor, hpColor, zoneColor } from '../../src/client/ui/format';
+import type { BoardRow } from '../../src/client/game/matchState';
+import { boardSignature, hexColor, hpColor, once, zoneColor } from '../../src/client/ui/format';
 
 describe('hexColor', () => {
   it('writes a 24-bit colour as #rrggbb, padded, and clamps nonsense', () => {
@@ -38,5 +39,56 @@ describe('zoneColor', () => {
     expect(alpha(20)).toBeGreaterThan(alpha(10));
     expect(alpha(39)).toBeGreaterThan(alpha(20));
     expect(zoneColor(Number.NaN)).toBe(zoneColor(0));
+  });
+});
+
+describe('once', () => {
+  it('writes the first value, then only values that differ from the last one written', () => {
+    const written: string[] = [];
+    const write = once((v: string) => written.push(v));
+    write('a');
+    write('a');
+    write('b');
+    write('a');
+    write('a');
+    expect(written).toEqual(['a', 'b', 'a']);
+  });
+
+  it('writes even a first value that looks like "nothing yet", and treats NaN as unchanged', () => {
+    const written: Array<number | undefined> = [];
+    const write = once((v: number | undefined) => written.push(v));
+    write(undefined);
+    write(undefined);
+    expect(written).toEqual([undefined]);
+    const nan: number[] = [];
+    const writeNumber = once((v: number) => nan.push(v));
+    writeNumber(Number.NaN);
+    writeNumber(Number.NaN);
+    expect(nan).toHaveLength(1);
+  });
+});
+
+describe('boardSignature', () => {
+  const row = (over: Partial<BoardRow> = {}): BoardRow => ({ slot: 0, name: 'Ann', color: 0xd84a2b, bot: false, score: 10, kills: 1, alive: true, hp: 80, you: true, ...over });
+
+  it('does not change with health or kills on the compact board, so a car being hurt does not rebuild it', () => {
+    const a = boardSignature([row(), row({ slot: 1, name: 'Bob', you: false })], false);
+    expect(boardSignature([row({ hp: 41.5, kills: 3 }), row({ slot: 1, name: 'Bob', you: false, hp: 3 })], false)).toBe(a);
+  });
+
+  it('changes with anything the compact board draws', () => {
+    const base = boardSignature([row()], false);
+    for (const over of [{ score: 11 }, { name: 'Anne' }, { alive: false }, { you: false }, { bot: true }, { color: 1 }, { slot: 2 }]) {
+      expect(boardSignature([row(over)], false)).not.toBe(base);
+    }
+    expect(boardSignature([row(), row({ slot: 1 })], false)).not.toBe(base);
+  });
+
+  it('adds kills and whole hit points on the detailed board, and tells the two boards apart', () => {
+    const base = boardSignature([row()], true);
+    expect(boardSignature([row({ kills: 2 })], true)).not.toBe(base);
+    expect(boardSignature([row({ hp: 70 })], true)).not.toBe(base);
+    expect(boardSignature([row({ hp: 79.2 })], true)).toBe(base); // 80 HP shown either way
+    expect(base).not.toBe(boardSignature([row()], false));
   });
 });

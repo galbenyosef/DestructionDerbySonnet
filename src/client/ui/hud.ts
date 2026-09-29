@@ -1,6 +1,6 @@
 import type { Zone } from '../../shared/types';
 import type { FeedItem, MatchView } from '../game/matchState';
-import { hexColor, hpColor, zoneColor } from './format';
+import { boardSignature, hexColor, hpColor, once, zoneColor } from './format';
 
 export interface Hud {
   setRoom(code: string, isPublic: boolean): void;
@@ -37,8 +37,9 @@ export function createHud(root: HTMLElement): Hud {
   const roundClock = el('div', 'hud-round-clock', round);
   const roundAlive = el('div', 'hud-round-alive', round);
 
-  const board = el('div', 'hud-board', wrap);
-  const feed = el('ul', 'hud-feed', wrap);
+  const side = el('div', 'hud-side', wrap); // the board and the kill feed under it share one column, so a tall board can never run into the feed
+  const board = el('div', 'hud-board', side);
+  const feed = el('ul', 'hud-feed', side);
 
   const bottom = el('div', 'hud-bottom', wrap); // the notice line above the health panel: one column, so they can never overlap
   const notice = el('div', 'hud-notice', bottom);
@@ -72,11 +73,45 @@ export function createHud(root: HTMLElement): Hud {
     }, 4000);
   };
 
+  // the HUD is refreshed every frame: each of these writes to the page only when its value changes
+  const showRound = once((visible: boolean) => {
+    round.hidden = !visible;
+  });
+  const showBoard = once((visible: boolean) => {
+    board.hidden = !visible;
+  });
+  const showMe = once((visible: boolean) => {
+    me.hidden = !visible;
+  });
+  const showBanner = once((visible: boolean) => {
+    banner.hidden = !visible;
+  });
+  const setBannerKind = once((kind: string) => {
+    banner.dataset.kind = kind;
+  });
+  const setHpWidth = once((width: string) => {
+    hpFill.style.width = width;
+  });
+  const setHpColor = once((color: string) => {
+    hpFill.style.background = color;
+  });
+  const setZone = new Map(
+    ZONES.map((z) => [
+      z,
+      once((color: string) => {
+        zoneCells.get(z)!.style.background = color;
+      }),
+    ]),
+  );
+  const setFlash = once((opacity: string) => {
+    flash.style.opacity = opacity;
+  });
+
   let boardKey = '';
-  const feedNodes = new Map<number, HTMLElement>();
+  const feedNodes = new Map<number, { node: HTMLElement; setOpacity: (opacity: string) => void }>();
 
   const drawBoard = (view: MatchView, detailed: boolean): void => {
-    const key = JSON.stringify([detailed, view.board]);
+    const key = boardSignature(view.board, detailed);
     if (key === boardKey) return;
     boardKey = key;
     board.replaceChildren();
@@ -97,20 +132,26 @@ export function createHud(root: HTMLElement): Hud {
 
   const drawFeed = (items: readonly FeedItem[]): void => {
     const live = new Set(items.map((f) => f.id));
-    for (const [id, node] of feedNodes) {
+    for (const [id, entry] of feedNodes) {
       if (!live.has(id)) {
-        node.remove();
+        entry.node.remove();
         feedNodes.delete(id);
       }
     }
     for (const f of items) {
-      let node = feedNodes.get(f.id);
-      if (!node) {
-        node = el('li', `feed-${f.tone}`, feed);
+      let entry = feedNodes.get(f.id);
+      if (!entry) {
+        const node = el('li', `feed-${f.tone}`, feed);
         node.textContent = f.text;
-        feedNodes.set(f.id, node);
+        entry = {
+          node,
+          setOpacity: once((opacity: string) => {
+            node.style.opacity = opacity;
+          }),
+        };
+        feedNodes.set(f.id, entry);
       }
-      node.style.opacity = String(Math.min(1, f.life * 3).toFixed(2));
+      entry.setOpacity(Math.min(1, f.life * 3).toFixed(2));
     }
   };
 
@@ -140,29 +181,30 @@ export function createHud(root: HTMLElement): Hud {
       room.append(label, copy);
     },
     setMatch(view, detailed) {
-      round.hidden = view.phase === null;
+      showRound(view.phase !== null);
       setText(roundTitle, `Round ${view.round}`);
       setText(roundClock, `${view.clockLabel} ${view.clock}`);
       setText(roundAlive, `Alive ${view.aliveCount}/${view.carCount}`);
+      showBoard(view.board.length > 0); // no empty pill before the first roster arrives
       drawBoard(view, detailed);
       drawFeed(view.feed);
-      me.hidden = view.me === null;
+      showMe(view.me !== null);
       if (view.me) {
         const hp = Math.max(0, view.me.hp);
-        hpFill.style.width = `${hp}%`;
-        hpFill.style.background = hpColor(hp);
+        setHpWidth(`${hp}%`);
+        setHpColor(hpColor(hp));
         setText(hpNum, view.me.alive ? String(Math.ceil(hp)) : 'OUT');
-        for (const z of ZONES) zoneCells.get(z)!.style.background = zoneColor(view.me.zones[z]);
+        for (const z of ZONES) setZone.get(z)!(zoneColor(view.me.zones[z]));
         setText(speed, `${view.speedKmh} km/h`);
       }
-      banner.hidden = view.banner === null;
-      banner.dataset.kind = view.banner?.kind ?? '';
+      showBanner(view.banner !== null);
+      setBannerKind(view.banner?.kind ?? '');
       if (view.banner) {
         setText(bannerTitle, view.banner.title);
         setText(bannerSub, view.banner.subtitle);
         setText(bannerHint, view.banner.hint);
       }
-      flash.style.opacity = view.flash.toFixed(2);
+      setFlash(view.flash.toFixed(2));
     },
     setStats(text) {
       setText(stats, text);

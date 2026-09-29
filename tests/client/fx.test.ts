@@ -103,6 +103,33 @@ describe('FxDirector hits reported by the server', () => {
     expect(t.fx.shake.level).toBeGreaterThan(far * 10); // the same hit close to the camera still shakes it
   });
 
+  it('plays one crash and one set of sparks for a collision the server tells once for each car in it, and dents both cars all the same', () => {
+    const t = setup();
+    const before = [t.shape(1), t.shape(2)];
+    t.fx.onHit(hit({ victim: 1, attacker: 2, tick: 200 }), t.frameArgs());
+    const sparks = t.sparks();
+    const nodes = t.ctxNodes();
+    const shake = t.fx.shake.level;
+    t.fx.onHit(hit({ victim: 2, attacker: 1, tick: 200 }), t.frameArgs()); // the same collision, told for the other car
+    expect(t.sparks()).toBe(sparks);
+    expect(t.ctxNodes()).toBe(nodes);
+    expect(t.fx.shake.level).toBe(shake);
+    expect(t.shape(1)).not.toEqual(before[0]);
+    expect(t.shape(2)).not.toEqual(before[1]);
+    t.fx.onHit(hit({ victim: 1, attacker: 2, tick: 320 }), t.frameArgs()); // a later collision of the same two cars is a new one
+    expect(t.sparks()).toBeGreaterThan(sparks);
+  });
+
+  it('forgets the collisions it was told about when a new round starts, because the ticks start again from zero', () => {
+    const t = setup();
+    t.fx.onHit(hit({ victim: 1, attacker: 2, tick: 200 }), t.frameArgs());
+    expect(t.sparks()).toBeGreaterThan(0);
+    t.fx.onRoster(); // the sparks are cleared with the rest of the round
+    expect(t.sparks()).toBe(0);
+    t.fx.onHit(hit({ victim: 1, attacker: 2, tick: 200 }), t.frameArgs()); // the next round's collision that happens to carry the same tick
+    expect(t.sparks()).toBeGreaterThan(0);
+  });
+
   it('takes a part off when a side has taken enough, and sends it flying', () => {
     const t = setup();
     t.fx.onHit(hit({ dmg: 6 }), t.frameArgs());
@@ -166,6 +193,16 @@ describe('FxDirector impacts of the local car', () => {
     expect(t.sparks()).toBeGreaterThan(20);
     expect(t.ctxNodes()).toBeGreaterThan(nodes);
     expect(t.fx.shake.level).toBeGreaterThan(0.3);
+  });
+
+  it('ignores what happens to your own wreck: the camera that orbits somebody else is not the one being hit', () => {
+    const t = setup();
+    t.setPoses([pose(0, { alive: false, hp: 0 }), pose(1), pose(2)]);
+    const nodes = t.ctxNodes();
+    t.fx.onLocalImpacts([impact(12, 1)], t.frameArgs());
+    expect(t.fx.shake.level).toBe(0);
+    expect(t.sparks()).toBe(0);
+    expect(t.ctxNodes()).toBe(nodes);
   });
 
   it('does not play the crash of one collision again on every tick it lasts, but does for the next collision', () => {

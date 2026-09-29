@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_CAMERA_RADIUS, SpectatorCamera, computeOrbitView, nextTarget, type Followable } from '../../src/client/game/spectator';
+import { MAX_CAMERA_RADIUS, SpectatorCamera, computeOrbitView, cycleDirection, nextTarget, type Followable } from '../../src/client/game/spectator';
 import { vlen, vsub } from '../../src/shared/math';
 
 const car = (slot: number, over: Partial<Followable> = {}): Followable => ({ slot, pos: { x: slot * 10, y: 1, z: 0 }, alive: true, visible: true, ...over });
@@ -35,6 +35,17 @@ describe('nextTarget', () => {
   it('stays on the only car left', () => {
     expect(nextTarget([car(4)], 4, 1)).toBe(4);
     expect(nextTarget([car(4)], 4, -1)).toBe(4);
+  });
+});
+
+describe('cycleDirection', () => {
+  it('maps the keys that switch the watched car to a direction: left and previous are -1, right and next +1', () => {
+    for (const code of ['ArrowLeft', 'KeyA', 'KeyQ']) expect(cycleDirection(code)).toBe(-1);
+    for (const code of ['ArrowRight', 'KeyD', 'KeyE']) expect(cycleDirection(code)).toBe(1);
+  });
+
+  it('says 0 for every other key, including names an object would inherit', () => {
+    for (const code of ['KeyW', 'Space', '', 'constructor', 'toString', '__proto__', 'hasOwnProperty']) expect(cycleDirection(code)).toBe(0);
   });
 });
 

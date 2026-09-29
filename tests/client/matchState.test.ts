@@ -38,6 +38,7 @@ describe('MatchState before and during the countdown', () => {
     expect(m.view().banner!.title).toBe('1');
     clock.t += 5000;
     expect(m.view().banner!.title).toBe('1'); // never 0 or negative while the phase message is the newest news
+    expect(m.view().clock).toBe('1'); // and the round panel says the same
   });
 
   it('treats a roster that repeats the round (a countdown restart) as the same round, with the clock starting over', () => {
@@ -83,6 +84,16 @@ describe('MatchState while the round is live', () => {
     expect(v.me).toMatchObject({ hp: 0 });
     expect(v.speedKmh).toBe(0);
     expect(v.board.find((r) => r.slot === 1)!.hp).toBe(0);
+  });
+
+  it('never shows more than 100 HP, whatever a snapshot claims', () => {
+    const { m } = match();
+    m.onRoster(roster());
+    m.onPhase(phase('live', 60_000));
+    m.onCars([{ slot: 0, hp: 250, alive: true, speed: 0 }, { slot: 1, hp: 101, alive: true, speed: 0 }]);
+    const v = m.view();
+    expect(v.me!.hp).toBe(100);
+    expect(v.board.map((r) => r.hp)).toEqual([100, 100, 100]);
   });
 
   it('shows your hit points and speed from the latest snapshot, and every car\'s state on the board', () => {
@@ -150,6 +161,17 @@ describe('MatchState while the round is live', () => {
     m.setWatching(2);
     expect(m.view().banner!.subtitle).toBe('Following Rusty');
     expect(m.view().me).toMatchObject({ alive: false, hp: 0 });
+  });
+
+  it('does not shout GO! at a player who joins a round that has been running for minutes', () => {
+    const { m } = match();
+    m.onWelcome(welcome({ you: -1, phase: phase('live', 100_000) }));
+    expect(m.view().banner).toMatchObject({ kind: 'watching' });
+    m.onPhase(phase('results', 8000)); // the round ends and the next one starts: that GO! is theirs to see
+    m.onRoster(roster({ epoch: 3, round: 2, you: 0 }));
+    m.onPhase(phase('countdown', 5000, 2));
+    m.onPhase(phase('live', 240_000, 2));
+    expect(m.view().banner).toMatchObject({ kind: 'go' });
   });
 
   it('tells a player who joined mid-round that they are watching', () => {

@@ -166,6 +166,37 @@ describe('KeyboardInput', () => {
   });
 });
 
+describe('KeyboardInput gamepad bumpers', () => {
+  const held = (...pressed: number[]): GamepadLike => pad([0, 0], Array.from({ length: 8 }, (_, i) => btn(pressed.includes(i) ? 1 : 0)));
+
+  it('reports each bumper press once: the right bumper is the next car, the left one the previous', () => {
+    let current: GamepadLike | null = held();
+    const kb = new KeyboardInput(new EventTarget(), () => current);
+    expect(kb.padCycle()).toBe(0);
+    current = held(5);
+    expect(kb.padCycle()).toBe(1);
+    expect(kb.padCycle()).toBe(0); // still held
+    current = held();
+    expect(kb.padCycle()).toBe(0);
+    current = held(4);
+    expect(kb.padCycle()).toBe(-1);
+    current = held(4, 5); // both at once: the right one wins, and neither repeats
+    expect(kb.padCycle()).toBe(1);
+    expect(kb.padCycle()).toBe(0);
+    current = null; // unplugged
+    expect(kb.padCycle()).toBe(0);
+    current = held(5);
+    expect(kb.padCycle()).toBe(1); // a press after being unplugged counts again
+    kb.dispose();
+  });
+
+  it('does not steer or accelerate when only a bumper is pressed', () => {
+    const kb = new KeyboardInput(new EventTarget(), () => held(4, 5));
+    expect(kb.sample(1 / 60)).toEqual({ throttle: 0, steer: 0, handbrake: false });
+    kb.dispose();
+  });
+});
+
 describe('isEditableTarget', () => {
   const el = (props: Record<string, unknown>): EventTarget => props as unknown as EventTarget;
 
