@@ -1,6 +1,11 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { obstacleBoxes, wallSegments, type BoxSpec } from '../../shared/arena';
 import { ARENA } from '../../shared/constants';
+import { createDressing } from './dressing';
 import { needsResize } from './viewport';
 
 export interface GameScene {
@@ -9,7 +14,10 @@ export interface GameScene {
   readonly camera: THREE.PerspectiveCamera;
   /** Matches the drawing buffer to the canvas' CSS size; cheap when nothing changed. */
   resize(): void;
+  /** Draws the scene through the bloom pass (things brighter than the sky glow: lamps, headlights, sparks, fire). */
   render(): void;
+  /** Turns the glow on or off (it is the most expensive part of a frame on a weak GPU). */
+  setBloom(enabled: boolean): void;
   dispose(): void;
 }
 
@@ -56,6 +64,7 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
   renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoftShadowMap is deprecated in r186
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.05;
+  renderer.info.autoReset = false; // the bloom passes render several times a frame: count them all, reset once per frame
 
   const scene = new THREE.Scene();
   const night = new THREE.Color(0x0b1226);
@@ -100,14 +109,9 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
   materials.push(blocks);
   for (const o of obstacleBoxes()) scene.add(boxMesh(o, blocks, geometries));
 
-  // Dark stands ring behind the walls and a few floodlight masts (purely decorative in this plan).
-  const standsGeometry = new THREE.CylinderGeometry(ARENA.RADIUS + 22, ARENA.RADIUS + 30, 10, 64, 1, true);
-  geometries.push(standsGeometry);
-  const standsMaterial = new THREE.MeshStandardMaterial({ color: 0x1a2236, roughness: 1, side: THREE.DoubleSide });
-  materials.push(standsMaterial);
-  const stands = new THREE.Mesh(standsGeometry, standsMaterial);
-  stands.position.y = 5;
-  scene.add(stands);
+  // The stands with their crowd, the tyre stacks outside the barrier, and a few floodlight masts.
+  const dressing = createDressing();
+  scene.add(dressing.group);
 
   const poleGeometry = new THREE.CylinderGeometry(0.3, 0.4, 16, 8);
   const lampGeometry = new THREE.BoxGeometry(3, 0.6, 1.2);
@@ -128,6 +132,15 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
 
   const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 600);
 
+  // Bloom: the scene is drawn into a high-range buffer, the bright parts are blurred and added back, and the result is tone mapped.
+  // The threshold is just above white, so only what is brighter than a lit surface glows (lamps, headlights, sparks, fire): the
+  // name tags, which are plain white, stay crisp.
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.6, 1.05);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+
   function resize(): void {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
@@ -136,6 +149,8 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
     if (needsResize(canvas.width, canvas.height, w, h, dpr)) {
       renderer.setPixelRatio(dpr);
       renderer.setSize(w, h, false);
+      composer.setPixelRatio(dpr);
+      composer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     }
@@ -146,8 +161,16 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
     scene,
     camera,
     resize,
-    render: () => renderer.render(scene, camera),
+    render: () => {
+      renderer.info.reset();
+      composer.render();
+    },
+    setBloom: (enabled) => {
+      bloom.enabled = enabled;
+    },
     dispose: () => {
+      dressing.dispose();
+      composer.dispose();
       for (const g of geometries) g.dispose();
       for (const m of materials) m.dispose();
       for (const t of textures) t.dispose();
