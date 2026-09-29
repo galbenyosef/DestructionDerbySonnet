@@ -27,7 +27,10 @@ export interface GameServerOptions {
   seed?: number;
   /** Limits per public address: sockets open, failed joins, rooms created (see GuardOptions for the defaults). */
   guard?: Partial<GuardOptions>;
-  /** How many reverse proxies stand in front of the server; the player's address is then read from X-Forwarded-For, that many entries from the right (default 0: the socket's peer). */
+  /**
+   * How many reverse proxies that APPEND to X-Forwarded-For stand in front of the server; the player's address is then read from it,
+   * that many entries from the right (default 0: the socket's peer). Never set it without such a proxy: a client could write its own header.
+   */
   trustProxy?: number;
 }
 
@@ -141,16 +144,20 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
   });
 
-  /** A player who is over the input limit this many frames in a row is flooding, not lagging: the socket is closed. */
-  const MAX_DROPPED_INPUTS = 300;
+  /** A player who goes over the input limit by this many frames within one second is flooding, not lagging: the socket is closed. */
+  const MAX_DROPPED_INPUTS_PER_SECOND = 200;
 
-  function onBinary(player: Player, ws: WebSocket, data: RawData, bucket: TokenBucket, flood: { dropped: number }): void {
+  function onBinary(player: Player, ws: WebSocket, data: RawData, bucket: TokenBucket, flood: { dropped: number; since: number }): void {
     if (!player.joined || !player.room) return; // inputs before a seat exists are ignored
     if (!bucket.take()) {
-      if (++flood.dropped > MAX_DROPPED_INPUTS) ws.close(1008, 'rate limited');
+      const now = Date.now();
+      if (now - flood.since >= 1000) {
+        flood.since = now;
+        flood.dropped = 0;
+      }
+      if (++flood.dropped > MAX_DROPPED_INPUTS_PER_SECOND) ws.close(1008, 'rate limited');
       return; // over the limit: drop the frame
     }
-    flood.dropped = 0;
     const pkt = decodeInput(toBytes(data));
     if (pkt) player.pushInput(pkt.seq, pkt.input);
   }
@@ -195,8 +202,8 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     }
     if (!result.ok) {
       player.sendError(result.code, ERROR_TEXT[result.code]);
-      // guessing room codes: a few honest mistakes are fine, a string of them locks the address out for a while
-      if ((result.code === 'room_not_found' || result.code === 'room_full') && guard.failedJoin(ip)) ws.close(1008, 'too many failed joins');
+      // guessing room codes: a few honest mistakes are fine, a string of them locks the address out for a while; a full room exists, so trying it again is not a guess
+      if (result.code === 'room_not_found' && guard.failedJoin(ip)) ws.close(1008, 'too many failed joins');
       return;
     }
     player.joined = true;
@@ -222,7 +229,7 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     const player = new Player(nextPlayerId++, ws);
     const textBucket = new TokenBucket(20, 10);
     const inputBucket = new TokenBucket(120, 90);
-    const flood = { dropped: 0 };
+    const flood = { dropped: 0, since: Date.now() };
     let alive = true;
     ws.on('pong', () => {
       alive = true;

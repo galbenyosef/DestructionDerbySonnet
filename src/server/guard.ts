@@ -4,7 +4,7 @@ import type http from 'node:http';
 export interface GuardOptions {
   /** Sockets open at once. */
   maxConnectionsPerIp: number;
-  /** Joins that fail (no such room, room full) in `failedJoinWindowMs` before the address is locked out for `lockoutMs`. */
+  /** Joins that fail (a room code that does not exist) in `failedJoinWindowMs` before the address is locked out for `lockoutMs`. */
   failedJoinLimit: number;
   failedJoinWindowMs: number;
   lockoutMs: number;
@@ -37,6 +37,22 @@ export function clientIp(req: Pick<http.IncomingMessage, 'headers' | 'socket'>, 
     if (entry) return entry.replace(/^::ffff:/, '');
   }
   return (req.socket.remoteAddress ?? 'unknown').replace(/^::ffff:/, '');
+}
+
+/**
+ * The key the guard counts an address under. An IPv4 address is its own key. One IPv6 client controls a whole /64 (that is what
+ * its provider gives it) and could come from a new address every time, so every address of one /64 counts as one client.
+ */
+export function guardKey(ip: string): string {
+  if (!ip.includes(':')) return ip;
+  const halves = ip.split('%')[0]!.toLowerCase().split('::');
+  if (halves.length > 2) return ip;
+  const left = halves[0] ? halves[0].split(':') : [];
+  const right = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const zeros = halves.length === 2 ? Array<string>(Math.max(0, 8 - left.length - right.length)).fill('0') : [];
+  const groups = [...left, ...zeros, ...right];
+  if (groups.length !== 8 || groups.some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return ip;
+  return `${groups.slice(0, 4).map((g) => Number.parseInt(g, 16).toString(16)).join(':')}::/64`;
 }
 
 /**
@@ -83,7 +99,7 @@ export class ConnectionGuard {
   /** A new socket from `ip`. Call `release(ip)` when it closes, but only after an `'ok'`. */
   admit(ip: string): Admission {
     if (isPrivateAddress(ip)) return 'ok';
-    const r = this.record(ip);
+    const r = this.record(guardKey(ip));
     if (r.lockedUntil > this.now()) return 'locked';
     if (this.options.maxConnectionsPerIp > 0 && r.open >= this.options.maxConnectionsPerIp) return 'too_many';
     r.open++;
@@ -92,16 +108,17 @@ export class ConnectionGuard {
 
   release(ip: string): void {
     if (isPrivateAddress(ip)) return;
-    const r = this.records.get(ip);
+    const key = guardKey(ip);
+    const r = this.records.get(key);
     if (!r) return;
     r.open = Math.max(0, r.open - 1);
-    this.forget(ip, r);
+    this.forget(key, r);
   }
 
   /** A join that failed. Returns true when the address is now locked out. A join that works does not clear the count: a guesser could interleave those; mistakes expire with the window. */
   failedJoin(ip: string): boolean {
     if (isPrivateAddress(ip) || this.options.failedJoinLimit <= 0) return false;
-    const r = this.record(ip);
+    const r = this.record(guardKey(ip));
     const t = this.now();
     r.failures = r.failures.filter((at) => t - at < this.options.failedJoinWindowMs);
     r.failures.push(t);
@@ -116,7 +133,7 @@ export class ConnectionGuard {
   /** May `ip` create another private room? Counts the creation when it says yes. */
   mayCreateRoom(ip: string): boolean {
     if (isPrivateAddress(ip) || this.options.roomsPerMinute <= 0) return true;
-    const r = this.record(ip);
+    const r = this.record(guardKey(ip));
     const t = this.now();
     r.rooms = r.rooms.filter((at) => t - at < 60_000);
     if (r.rooms.length >= this.options.roomsPerMinute) return false;

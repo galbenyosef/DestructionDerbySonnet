@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConnectionGuard, DEFAULT_GUARD, clientIp, isPrivateAddress } from '../../src/server/guard';
+import { ConnectionGuard, DEFAULT_GUARD, clientIp, guardKey, isPrivateAddress } from '../../src/server/guard';
 
 const PUBLIC = '203.0.113.7';
 const OTHER = '198.51.100.20';
@@ -31,6 +31,46 @@ describe('isPrivateAddress and clientIp', () => {
     // fewer entries than proxies, or none: the request skipped a proxy, so the peer is the client
     expect(clientIp(req(OTHER), 2)).toBe('10.0.0.1');
     expect(clientIp(req(undefined), 1)).toBe('10.0.0.1');
+  });
+});
+
+describe('guardKey', () => {
+  it('is the address for IPv4, and the /64 prefix for IPv6, because one client controls a whole /64 and could use a new address every time', () => {
+    expect(guardKey('203.0.113.7')).toBe('203.0.113.7');
+    expect(guardKey('2001:db8:1:2:aaaa::1')).toBe(guardKey('2001:db8:1:2:bbbb:0:0:2'));
+    expect(guardKey('2001:db8:1:2:aaaa::1')).toBe(guardKey('2001:0DB8:1:2::9')); // upper case and compression do not matter
+    expect(guardKey('2001:db8:1:2::1')).not.toBe(guardKey('2001:db8:1:3::1'));
+    expect(guardKey('2001:db8:1:2::1')).not.toBe(guardKey('2001:db9:1:2::1'));
+    expect(guardKey('2001:db8::1')).toBe(guardKey('2001:db8:0:0:5::1')); // "::" fills the zero groups
+    expect(guardKey('not an address')).toBe('not an address');
+  });
+});
+
+describe('ConnectionGuard and IPv6 clients', () => {
+  it('counts every address of one /64 as one client for sockets, failed guesses and rooms, and keeps other prefixes apart', () => {
+    const { c, now } = clock();
+    const g = new ConnectionGuard({ maxConnectionsPerIp: 2, failedJoinLimit: 3, lockoutMs: 30_000, roomsPerMinute: 2, now });
+    const a1 = '2001:db8:1:2:1::1';
+    const a2 = '2001:db8:1:2:2::1';
+    const a3 = '2001:db8:1:2:3::1';
+    const other = '2001:db8:1:9::1';
+    expect([g.admit(a1), g.admit(a2), g.admit(a3)]).toEqual(['ok', 'ok', 'too_many']); // rotating inside the prefix gains nothing
+    expect(g.admit(other)).toBe('ok');
+    g.release(a1);
+    expect(g.admit(a3)).toBe('ok');
+    expect([g.failedJoin(a1), g.failedJoin(a2), g.failedJoin(a3)]).toEqual([false, false, true]);
+    expect(g.admit('2001:db8:1:2:4::1')).toBe('locked');
+    expect(g.admit(other)).toBe('ok'); // another prefix is not locked out with them, and has its own second socket...
+    expect(g.admit(other)).toBe('too_many'); // ...but not a third
+    expect([g.mayCreateRoom(a1), g.mayCreateRoom(a2), g.mayCreateRoom(a3)]).toEqual([true, true, false]);
+    c.t += 61_000;
+    expect(g.mayCreateRoom(a3)).toBe(true);
+  });
+
+  it('still exempts private IPv6 addresses (unique local and link-local)', () => {
+    const g = new ConnectionGuard({ maxConnectionsPerIp: 1 });
+    for (let i = 0; i < 4; i++) expect(g.admit(`fd12:3456:789a:1::${i + 1}`)).toBe('ok');
+    for (let i = 0; i < 4; i++) expect(g.admit(`fe80::${i + 1}`)).toBe('ok');
   });
 });
 

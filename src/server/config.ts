@@ -20,7 +20,10 @@ const nonNegative = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 };
 
-/** How many reverse proxies to trust: "1", "true" or "yes" is one, a whole number is that many, anything else is none. */
+/**
+ * How many reverse proxies to trust: "1", "true" or "yes" is one, a whole number is that many, anything else is none. It must be the
+ * exact number of proxies in front that append to X-Forwarded-For, and 0 without any: see the README before setting it.
+ */
 const proxies = (value: string | undefined): number => {
   const v = (value ?? '').trim().toLowerCase();
   if (v === 'true' || v === 'yes') return 1;

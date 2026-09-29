@@ -87,6 +87,26 @@ describe('limits per address (behind a proxy that says who the player is)', () =
     expect(await upgradeStatus(B)).toBe(101);
   });
 
+  it('does not count a full room as a wrong guess: somebody waiting for a seat can keep trying', async () => {
+    await start({ guard: { failedJoinLimit: 3, lockoutMs: 60_000 } });
+    const host = await connect(B);
+    host.hello({ mode: 'create' });
+    const { room } = await host.waitFor(() => host.welcome(), 3000, 'welcome for the host');
+    for (let i = 1; i < 8; i++) {
+      const guest = await connect(B);
+      guest.hello({ mode: 'join', code: room.code });
+      await guest.waitFor(() => guest.welcome(), 3000, 'welcome for a guest');
+    }
+    const waiting = await connect(A);
+    for (let i = 0; i < 6; i++) {
+      waiting.hello({ mode: 'join', code: room.code });
+      await waiting.waitFor(() => waiting.errors().length > i, 3000, `room_full number ${i + 1}`);
+    }
+    expect(waiting.errors().map((e) => e.code)).toEqual(Array(6).fill('room_full'));
+    expect(waiting.closed).toBeNull();
+    expect(await upgradeStatus(A)).toBe(101);
+  });
+
   it('lets an honest mistake or two pass, and a join that worked in between does not clear them', async () => {
     await start({ guard: { failedJoinLimit: 3, lockoutMs: 60_000 } });
     const wrong = async (code: string): Promise<void> => {
@@ -141,6 +161,32 @@ describe('limits per address (behind a proxy that says who the player is)', () =
 });
 
 describe('a client that floods input frames', () => {
+  it('does not hang up on a client that overshoots the limit now and then, as long as it never does so much within one second', async () => {
+    await start();
+    const client = await connect(A);
+    client.hello({ mode: 'create' });
+    await client.waitFor(() => client.welcome(), 3000, 'welcome');
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < 300; i++) client.sendInput({ throttle: 1, steer: 0, handbrake: false }); // a backlog released at once: about 180 frames over the limit
+      await sleep(1300); // the count starts over each second, so many such moments in a long session never add up
+    }
+    expect(client.closed).toBeNull();
+  });
+
+  it('is disconnected for a flood paced below the burst limit as well: what counts is how many frames it sends over the limit each second', async () => {
+    await start();
+    const flooder = await connect(A);
+    flooder.hello({ mode: 'create' });
+    await flooder.waitFor(() => flooder.welcome(), 3000, 'welcome');
+    const t0 = Date.now();
+    while (!flooder.closed && Date.now() - t0 < 4000) {
+      for (let i = 0; i < 3; i++) flooder.sendInput({ throttle: 1, steer: 0, handbrake: false }); // about 2 000 to 3 000 frames a second, one 1 ms step at a time
+      await sleep(1);
+    }
+    await flooder.waitFor(() => flooder.closed, 2000, 'the flooder to be disconnected');
+    expect(flooder.closed?.code).toBe(1008);
+  });
+
   it('is disconnected after a long run of dropped frames, and a client at its normal rate never is', async () => {
     await start();
     const flooder = await connect(A);
