@@ -2166,3 +2166,12 @@ git commit -m "feat(client): the match screen \u2014 round clock, scoreboard, ki
 **Known limits of this baseline (each addressed by a later plan):** there is no sound, no smoke, sparks or debris, no dents and no skid marks (Plan 6); the local car's wheels are still drawn from an approximation although the local simulation knows them exactly (a Plan 6 change in `carView.ts`); the spectator camera orbits at a fixed distance and can see through an obstacle; the HUD is a fixed desktop layout with no settings menu or graphics presets (Plan 7); a player who leaves during the countdown still becomes a wreck for the whole round (a Plan 4 minor).
 
 **Next plans** (written after this one is verified, against the code as it then stands): Plan 6 — destruction and juice (dents, parts, particles, skid marks, camera shake, bloom, audio, arena dressing); Plan 7 — polish and packaging (menu and settings, graphics presets, limits, CLAUDE.md, Dockerfile, load test).
+
+---
+
+## Changes made during execution and after the final review
+
+- **During execution (browser check):** the hint line of the `You are out` and `Watching` banners was hidden behind the name tag of the car being followed, so those two banners sit at 17% of the screen height instead of 26% (one CSS rule, `.hud-banner[data-kind='out'], .hud-banner[data-kind='watching'] { top: 17%; }`). The Task 35 text above does not have it.
+- **After the final review (one Important finding):** the notice line (invite link copied, connection unstable, server errors) was drawn inside the new health panel, because both were anchored to the bottom of the screen with unrelated offsets. `hud.ts` now puts the notice and the health panel in one flex column (`.hud-bottom`), the notice above the panel, so they cannot overlap whatever the panel's height. Measured in Chromium: notice inside the panel before, clear above it after.
+- The review's minor findings (a 1.2 s "GO!" for a player who joins a running round, the kill feed's fixed offset under an 8-car board, redundant per-frame DOM writes, an unclamped health above 100, a dead `disposeNameTag`, Fn+F3 on a Mac, an empty board pill before the first roster, no gamepad key for switching cars) were deferred and are listed in the run's final report.
+
