@@ -39,6 +39,16 @@ export function computeChaseView(t: ChaseTarget): ChaseView {
   };
 }
 
+/** Puts a three.js camera where a view says (the field of view is only touched when it changed). */
+export function applyChaseView(camera: PerspectiveCamera, view: ChaseView): void {
+  camera.position.set(view.position.x, view.position.y, view.position.z);
+  camera.lookAt(view.lookAt.x, view.lookAt.y, view.lookAt.z);
+  if (Math.abs(camera.fov - view.fov) > 0.01) {
+    camera.fov = view.fov;
+    camera.updateProjectionMatrix();
+  }
+}
+
 /** Smoothing wrapper that applies a ChaseView to a three.js camera. */
 export class ChaseCamera {
   private position: Vec3 | null = null;
@@ -62,11 +72,6 @@ export class ChaseCamera {
       this.lookAt = vlerp(this.lookAt, want.lookAt, Math.min(1, k * 1.5));
       this.fov = lerp(this.fov, want.fov, k);
     }
-    camera.position.set(this.position.x, this.position.y, this.position.z);
-    camera.lookAt(this.lookAt.x, this.lookAt.y, this.lookAt.z);
-    if (Math.abs(camera.fov - this.fov) > 0.01) {
-      camera.fov = this.fov;
-      camera.updateProjectionMatrix();
-    }
+    applyChaseView(camera, { position: this.position, lookAt: this.lookAt, fov: this.fov });
   }
 }
