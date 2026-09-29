@@ -10,11 +10,13 @@ import { formatNetStats } from '../net/netStats';
 import { ClientSession, type DrawPose, type NetMode } from '../net/session';
 import type { Hud } from '../ui/hud';
 import type { JoinChoice } from '../ui/menu';
-import { ChaseCamera } from './camera';
+import { applyChaseView, ChaseCamera } from './camera';
 import { CarView } from './carView';
 import { KeyboardInput } from './input';
-import { createNameTag, disposeNameTag } from './nameTag';
+import { MatchState } from './matchState';
+import { NameTag } from './nameTag';
 import type { GameScene } from './scene';
+import { SpectatorCamera } from './spectator';
 import { FixedStepper } from './stepper';
 
 export interface GameClientOptions {
@@ -30,6 +32,16 @@ export interface GameClientOptions {
   lag?: LagOptions | null;
 }
 
+/** Keys that switch the car the spectator camera follows (they steer when you drive, so they are free once you are out). */
+const CYCLE_KEYS: Readonly<Record<string, 1 | -1>> = {
+  ArrowLeft: -1,
+  KeyA: -1,
+  KeyQ: -1,
+  ArrowRight: 1,
+  KeyD: 1,
+  KeyE: 1,
+};
+
 /**
  * Sends inputs at 60 Hz. In 'predict' mode (default) it runs the shared simulation locally for every car, rolls back
  * to each server snapshot and replays the unacknowledged inputs, so your own car reacts instantly; in 'interp' mode
@@ -37,10 +49,12 @@ export interface GameClientOptions {
  */
 export class GameClient {
   private readonly views = new Map<number, CarView>();
-  private readonly tags = new Map<number, THREE.Sprite>();
+  private readonly tags = new Map<number, NameTag>();
   private readonly session: ClientSession;
   private readonly chase = new ChaseCamera();
-  private readonly keyboard = new KeyboardInput();
+  private readonly spectator = new SpectatorCamera();
+  private readonly match = new MatchState();
+  private readonly keyboard = new KeyboardInput(undefined, undefined, (code) => this.onKey(code));
   private readonly stepper = new FixedStepper(PHYSICS.DT);
   private readonly timer = new THREE.Timer();
   private readonly conn: Connection;
@@ -51,6 +65,9 @@ export class GameClient {
   private roster: PlayerInfo[] = [];
   private epoch = 0;
   private lastPoses: DrawPose[] = [];
+  /** True while your own car is running: the chase camera follows it; otherwise the spectator camera orbits another car. */
+  private driving = false;
+  private statsVisible = false;
   private raf = 0;
   private stopped = false;
   private frames = 0;
@@ -131,9 +148,9 @@ export class GameClient {
         this.epoch = m.epoch;
         this.roster = m.players;
         this.session.onWelcome(m.you, m.epoch, m.phase?.phase ?? null);
+        this.match.onWelcome(m);
         this.applyRoster();
         this.opts.hud.setRoom(m.room.code, m.room.public);
-        this.opts.hud.setPlayers(this.roster, this.mySlot);
         break;
       case 'roster':
         this.epoch = m.epoch;
@@ -141,11 +158,25 @@ export class GameClient {
         this.mySlot = m.you; // slots are per round
         this.session.onRoster(m.epoch, m.you); // a new world: drop everything buffered or predicted
         this.chase.reset(); // and start the camera at the new spawn
+        this.spectator.reset();
+        this.match.onRoster(m);
         this.applyRoster();
-        this.opts.hud.setPlayers(this.roster, this.mySlot);
         break;
       case 'phase':
         this.session.onPhase(m.phase);
+        this.match.onPhase(m);
+        break;
+      case 'hit':
+        this.match.onHit(m);
+        break;
+      case 'ko':
+        this.match.onKo(m);
+        break;
+      case 'scores':
+        this.match.onScores(m);
+        break;
+      case 'results':
+        this.match.onResults(m);
         break;
       case 'error':
         if (this.joined) this.opts.hud.showNotice(m.message);
@@ -194,19 +225,29 @@ export class GameClient {
     const view = this.views.get(slot);
     if (!view) return;
     const existing = this.tags.get(slot);
-    if (existing && existing.userData.name === name) return;
-    if (existing) disposeNameTag(existing);
-    const tag = createNameTag(name);
-    tag.userData.name = name;
-    view.group.add(tag);
+    if (existing && existing.name === name) return;
+    existing?.dispose();
+    const tag = new NameTag(name);
+    view.group.add(tag.group);
     this.tags.set(slot, tag);
   }
 
   private removeTag(slot: number): void {
     const tag = this.tags.get(slot);
     if (!tag) return;
-    disposeNameTag(tag);
+    tag.dispose();
     this.tags.delete(slot);
+  }
+
+  /** F3 shows the network line; while you are out, the cycle keys pick the next car to watch. */
+  private onKey(code: string): void {
+    if (code === 'F3') {
+      this.statsVisible = !this.statsVisible;
+      this.opts.hud.setStatsVisible(this.statsVisible);
+      return;
+    }
+    const direction = CYCLE_KEYS[code];
+    if (direction && !this.driving) this.spectator.cycle(this.lastPoses, direction);
   }
 
   private readonly frame = (ts: number): void => {
@@ -232,17 +273,21 @@ export class GameClient {
       view.group.visible = true;
       view.setPose(p.pos, p.quat);
       view.setWreck(!p.alive);
+      this.tags.get(p.slot)?.update(p.hp, p.alive);
       const vf = vdot(p.linvel, quatRotate(p.quat, CAR_FORWARD));
       view.animateWheels(vf, steeringAngle(p.steer, vf), dt);
     }
     for (const [slot, view] of this.views) if (!seen.has(slot)) view.group.visible = false;
 
-    // follow your own car; when it is a wreck, or you have no car this round, follow the first car still running
+    // chase your own car while it runs; once it is a wreck (or you have none this round) orbit a car that still runs
     const mine = poses.find((p) => p.slot === this.mySlot && p.visible);
-    const watched = mine?.alive ? mine : (poses.find((p) => p.visible && p.alive && p.slot !== this.mySlot) ?? mine);
-    if (watched) {
-      this.chase.update(this.opts.gs.camera, { pos: watched.pos, quat: watched.quat, speed: vlen(watched.linvel) }, dt);
-    }
+    this.driving = mine?.alive === true;
+    const orbit = this.driving ? null : this.spectator.view(poses, dt);
+    if (orbit) applyChaseView(this.opts.gs.camera, orbit);
+    else if (mine) this.chase.update(this.opts.gs.camera, { pos: mine.pos, quat: mine.quat, speed: vlen(mine.linvel) }, dt);
+    this.match.setWatching(this.driving ? -1 : this.spectator.watching);
+    this.match.onCars(poses.filter((p) => p.visible).map((p) => ({ slot: p.slot, hp: p.hp, alive: p.alive, speed: vlen(p.linvel) })));
+    this.opts.hud.setMatch(this.match.view(), this.keyboard.isDown('Tab'));
     this.opts.gs.resize();
     this.opts.gs.render();
     this.updateStats();

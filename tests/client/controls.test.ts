@@ -121,6 +121,31 @@ describe('KeyboardInput', () => {
     kb.dispose();
   });
 
+  it('says which keys are held right now, and forgets them on release and on blur', () => {
+    const target = new EventTarget();
+    const kb = new KeyboardInput(target, () => null);
+    expect(kb.isDown('Tab')).toBe(false);
+    target.dispatchEvent(keyEvent('keydown', 'Tab'));
+    expect(kb.isDown('Tab')).toBe(true);
+    target.dispatchEvent(keyEvent('keyup', 'Tab'));
+    expect(kb.isDown('Tab')).toBe(false);
+    target.dispatchEvent(keyEvent('keydown', 'Tab'));
+    target.dispatchEvent(new Event('blur'));
+    expect(kb.isDown('Tab')).toBe(false);
+    kb.dispose();
+  });
+
+  it('keeps the browser from moving focus on Tab or opening find on F3', () => {
+    const target = new EventTarget();
+    const kb = new KeyboardInput(target, () => null);
+    for (const code of ['Tab', 'F3']) {
+      const e = keyEvent('keydown', code);
+      target.dispatchEvent(e);
+      expect(e.defaultPrevented).toBe(true);
+    }
+    kb.dispose();
+  });
+
   it('lets an active gamepad override the keyboard', () => {
     const target = new EventTarget();
     const buttons = Array.from({ length: 8 }, () => btn(0));

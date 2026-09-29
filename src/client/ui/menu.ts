@@ -61,7 +61,7 @@ export function showMenu(root: HTMLElement, options: MenuOptions = {}): Promise<
     <div class="row"><button id="m-quick" class="primary" type="button">Quick Play</button><button id="m-create" type="button">Create private room</button></div>
     <div class="row"><input id="m-code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Room code" /><button id="m-join" type="button">Join with code</button></div>
     <p class="error" id="m-error" role="alert"></p>
-    <p class="hint">W/S throttle · A/D steer · Space handbrake</p>`;
+    <p class="hint">W/S throttle · A/D steer · Space handbrake · Tab scoreboard · F3 network</p>`;
   root.append(menu);
 
   const q = <T extends HTMLElement>(selector: string): T => menu.querySelector<T>(selector)!;

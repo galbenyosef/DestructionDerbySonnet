@@ -167,6 +167,9 @@
         inset: 0;
         pointer-events: none;
       }
+      .hud [hidden] {
+        display: none !important; /* panels that set their own display would otherwise ignore the attribute */
+      }
       .hud-room {
         position: absolute;
         left: 16px;
@@ -190,34 +193,223 @@
         border-radius: 6px;
         cursor: pointer;
       }
-      .hud-players {
+      .hud-round {
         position: absolute;
-        right: 16px;
+        left: 50%;
         top: 12px;
-        min-width: 150px;
-        margin: 0;
-        padding: 8px 12px;
-        list-style: none;
+        transform: translateX(-50%);
+        min-width: 190px;
+        padding: 6px 14px;
+        text-align: center;
         background: var(--panel);
         border: 1px solid var(--line);
         border-radius: 8px;
         font-size: 13px;
       }
-      .hud-players li {
+      .hud-round-title {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+      .hud-round-clock {
+        font-size: 20px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .hud-round-alive {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .hud-board {
+        position: absolute;
+        right: 16px;
+        top: 12px;
+        min-width: 190px;
+        padding: 6px 10px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-size: 13px;
+      }
+      .hud-board.detailed {
+        min-width: 300px;
+      }
+      .hud-board .row {
         display: flex;
         align-items: center;
         gap: 8px;
         padding: 2px 0;
       }
-      .hud-players .chip {
+      .hud-board .row.you {
+        color: var(--accent);
+        font-weight: 700;
+      }
+      .hud-board .row.out {
+        opacity: 0.45;
+        text-decoration: line-through;
+      }
+      .hud-board .rank {
+        width: 1.2em;
+        color: var(--muted);
+        text-align: right;
+      }
+      .hud-board .chip {
         flex: none;
         width: 10px;
         height: 10px;
         border-radius: 50%;
       }
-      .hud-players .you {
+      .hud-board .name {
+        flex: 1;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .hud-board .stat {
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+      }
+      .hud-board .score {
+        min-width: 2.6em;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .hud-feed {
+        position: absolute;
+        right: 16px;
+        top: 190px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        text-align: right;
+        font-size: 13px;
+        text-shadow: 0 1px 3px #000;
+      }
+      .hud-feed li {
+        margin-top: 3px;
+      }
+      .hud-feed .feed-mine {
+        color: #7dff9b;
+        font-weight: 700;
+      }
+      .hud-feed .feed-theirs {
+        color: #ff8a8a;
+        font-weight: 700;
+      }
+      .hud-me {
+        position: absolute;
+        left: 50%;
+        bottom: 26px;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 8px 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .hud-zones {
+        display: grid;
+        grid-template: 12px 22px 12px / 12px 22px 12px;
+        gap: 2px;
+      }
+      .hud-zones .zone {
+        border-radius: 3px;
+      }
+      .hud-zones .zone-front {
+        grid-area: 1 / 2;
+      }
+      .hud-zones .zone-left {
+        grid-area: 2 / 1;
+      }
+      .hud-zones .zone-right {
+        grid-area: 2 / 3;
+      }
+      .hud-zones .zone-rear {
+        grid-area: 3 / 2;
+      }
+      .hud-zones .zone-car {
+        grid-area: 2 / 2;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.35);
+      }
+      .hud-hp {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .hp-bar {
+        width: 200px;
+        height: 14px;
+        background: rgba(0, 0, 0, 0.45);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        overflow: hidden;
+      }
+      .hp-fill {
+        height: 100%;
+        width: 100%;
+        transition: width 120ms linear;
+      }
+      .hp-num {
+        min-width: 2.4em;
+        font-size: 22px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .hud-speed {
+        min-width: 5.5em;
+        text-align: right;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .hud-banner {
+        position: absolute;
+        left: 50%;
+        top: 26%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        text-shadow: 0 2px 8px #000;
+      }
+      .banner-title {
+        font-size: 72px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        line-height: 1;
+      }
+      .hud-banner[data-kind='go'] .banner-title {
+        color: #7dff9b;
+      }
+      .hud-banner[data-kind='out'],
+      .hud-banner[data-kind='watching'] {
+        top: 17%; /* higher than the big banners: the name of the car being followed sits near the middle of the screen */
+      }
+      .hud-banner[data-kind='out'] .banner-title,
+      .hud-banner[data-kind='watching'] .banner-title {
+        font-size: 40px;
+      }
+      .hud-banner[data-kind='results'] .banner-title {
+        font-size: 52px;
         color: var(--accent);
-        font-size: 11px;
+      }
+      .banner-sub {
+        margin-top: 8px;
+        font-size: 18px;
+        color: var(--ink);
+      }
+      .banner-hint {
+        margin-top: 6px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .hud-flash {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        background: radial-gradient(ellipse at center, rgba(255, 0, 0, 0) 45%, rgba(255, 30, 30, 0.7) 100%);
       }
       .hud-stats {
         position: absolute;

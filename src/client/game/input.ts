@@ -50,7 +50,7 @@ const defaultGamepadReader: GamepadReader = () => {
   return null;
 };
 
-const PREVENT_DEFAULT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space']);
+const PREVENT_DEFAULT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Tab', 'F3']);
 
 /** True for elements the player types into (the tuning panel's number fields); game keys must not fire there. */
 export function isEditableTarget(target: EventTarget | null): boolean {
@@ -96,6 +96,11 @@ export class KeyboardInput {
     target.addEventListener('keydown', this.onKeyDown, { capture: true });
     target.addEventListener('keyup', this.onKeyUp, { capture: true });
     target.addEventListener('blur', this.onBlur);
+  }
+
+  /** True while the key with this `KeyboardEvent.code` is held (the scoreboard shows while Tab is down). */
+  isDown(code: string): boolean {
+    return this.keys.has(code);
   }
 
   /** Samples the current input; advances the steering ramp by `dt` seconds. */
