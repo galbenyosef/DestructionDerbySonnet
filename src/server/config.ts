@@ -20,6 +20,13 @@ const nonNegative = (value: string | undefined, fallback: number): number => {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 };
 
+/** How many reverse proxies to trust: "1", "true" or "yes" is one, a whole number is that many, anything else is none. */
+const proxies = (value: string | undefined): number => {
+  const v = (value ?? '').trim().toLowerCase();
+  if (v === 'true' || v === 'yes') return 1;
+  return /^\d{1,2}$/.test(v) ? Number(v) : 0;
+};
+
 /** Seconds (fractions allowed) turned into simulation ticks; anything unusable gives the default. */
 const ticks = (value: string | undefined, fallbackTicks: number): number => {
   const n = Number.parseFloat(value ?? '');
@@ -38,6 +45,8 @@ export function readConfig(env: Record<string, string | undefined>, cwd: string 
         .filter(Boolean),
       maxRooms: positive(env.MAX_ROOMS, 12),
       maxConnections: positive(env.MAX_CONNECTIONS, 200),
+      guard: { maxConnectionsPerIp: nonNegative(env.MAX_CONNECTIONS_PER_IP, 16) },
+      trustProxy: proxies(env.TRUST_PROXY),
       botFill: Math.min(nonNegative(env.BOT_FILL, ROUND.BOT_FILL), 8),
       rules: {
         countdownTicks: ticks(env.COUNTDOWN_SECONDS, ROUND.COUNTDOWN_TICKS),

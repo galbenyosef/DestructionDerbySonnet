@@ -11,6 +11,8 @@ describe('readConfig', () => {
       allowedOrigins: [],
       maxRooms: 12,
       maxConnections: 200,
+      guard: { maxConnectionsPerIp: 16 },
+      trustProxy: 0,
       botFill: ROUND.BOT_FILL,
       rules: { countdownTicks: ROUND.COUNTDOWN_TICKS, liveTicks: ROUND.LIVE_TICKS, resultsTicks: ROUND.RESULTS_TICKS },
     });
@@ -27,6 +29,12 @@ describe('readConfig', () => {
     expect(c.options.maxRooms).toBe(3);
     expect(c.options.maxConnections).toBe(50);
     expect(c.options.botFill).toBe(2);
+    const proxied = readConfig({ MAX_CONNECTIONS_PER_IP: '4', TRUST_PROXY: 'true' }, '/app');
+    expect(proxied.options.guard).toEqual({ maxConnectionsPerIp: 4 });
+    expect(proxied.options.trustProxy).toBe(1);
+    expect(readConfig({ TRUST_PROXY: '2' }, '/app').options.trustProxy).toBe(2); // a chain of two proxies
+    for (const off of ['', '0', 'no', 'false', 'lots', '-1', '2.5x']) expect(readConfig({ TRUST_PROXY: off }, '/app').options.trustProxy, off).toBe(0);
+    expect(readConfig({ MAX_CONNECTIONS_PER_IP: '0' }, '/app').options.guard?.maxConnectionsPerIp).toBe(0); // 0 turns the limit off
     expect(c.options.rules).toEqual({ countdownTicks: 180, liveTicks: 2700, resultsTicks: 150 });
   });
 

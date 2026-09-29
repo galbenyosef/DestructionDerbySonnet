@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { WebSocketServer, type RawData, type WebSocket } from 'ws';
 import { NET, PHYSICS } from '../shared/constants';
 import { decodeInput, normalizeRoomCode, parseClientMessage, sanitizeName, type ErrorCode } from '../shared/protocol';
+import { ConnectionGuard, clientIp, type GuardOptions } from './guard';
 import { TokenBucket } from './limits';
 import { Lobby, type JoinResult } from './lobby';
 import { Player } from './player';
@@ -24,6 +25,10 @@ export interface GameServerOptions {
   botFill?: number;
   /** Seeds the bots' randomness (default: random per room). */
   seed?: number;
+  /** Limits per public address: sockets open, failed joins, rooms created (see GuardOptions for the defaults). */
+  guard?: Partial<GuardOptions>;
+  /** How many reverse proxies stand in front of the server; the player's address is then read from X-Forwarded-For, that many entries from the right (default 0: the socket's peer). */
+  trustProxy?: number;
 }
 
 export interface ServerStats {
@@ -52,6 +57,7 @@ const ERROR_TEXT: Record<ErrorCode, string> = {
   room_not_found: 'No room with that code.',
   server_full: 'The server is full — try again in a moment.',
   rate_limited: 'Too many messages.',
+  too_many_rooms: 'You are creating rooms too fast — wait a minute.',
   inactive: 'Disconnected for inactivity.',
 };
 
@@ -80,6 +86,9 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     room: { rules: options.rules, botFill: options.botFill, ...(options.seed === undefined ? {} : { seed: options.seed }) },
   });
   const staticHandler = options.staticDir ? createStaticHandler(options.staticDir) : null;
+  const guard = new ConnectionGuard(options.guard);
+  const trustProxy = options.trustProxy ?? 0;
+  let sweeper: ReturnType<typeof setInterval> | null = null;
   const maxConnections = options.maxConnections ?? 200;
   const helloTimeoutMs = options.helloTimeoutMs ?? NET.HELLO_TIMEOUT_MS;
   const startedAt = Date.now();
@@ -121,17 +130,27 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     if ((req.url ?? '').split('?')[0] !== '/ws') return refuse('404 Not Found');
     if (!originAllowed(req.headers.origin, req.headers.host, options.allowedOrigins)) return refuse('403 Forbidden');
     if (connections >= maxConnections) return refuse('503 Service Unavailable');
+    const ip = clientIp(req, trustProxy);
+    if (guard.admit(ip) !== 'ok') return refuse('429 Too Many Requests');
+    socket.once('close', () => guard.release(ip)); // whatever becomes of this socket, even a handshake that fails, its slot comes back
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
   });
 
-  function onBinary(player: Player, data: RawData, bucket: TokenBucket): void {
+  /** A player who is over the input limit this many frames in a row is flooding, not lagging: the socket is closed. */
+  const MAX_DROPPED_INPUTS = 300;
+
+  function onBinary(player: Player, ws: WebSocket, data: RawData, bucket: TokenBucket, flood: { dropped: number }): void {
     if (!player.joined || !player.room) return; // inputs before a seat exists are ignored
-    if (!bucket.take()) return; // silently drop input floods
+    if (!bucket.take()) {
+      if (++flood.dropped > MAX_DROPPED_INPUTS) ws.close(1008, 'rate limited');
+      return; // over the limit: drop the frame
+    }
+    flood.dropped = 0;
     const pkt = decodeInput(toBytes(data));
     if (pkt) player.pushInput(pkt.seq, pkt.input);
   }
 
-  function onText(player: Player, ws: WebSocket, text: string, bucket: TokenBucket): void {
+  function onText(player: Player, ws: WebSocket, text: string, bucket: TokenBucket, ip: string): void {
     if (!bucket.take()) {
       player.sendError('rate_limited', ERROR_TEXT.rate_limited);
       ws.close(1008, 'rate limited');
@@ -159,13 +178,20 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     player.color = msg.color;
     let result: JoinResult;
     if (msg.mode === 'quick') result = lobby.quickPlay(player);
-    else if (msg.mode === 'create') result = lobby.createPrivate(player);
-    else {
+    else if (msg.mode === 'create') {
+      if (!guard.mayCreateRoom(ip)) {
+        player.sendError('too_many_rooms', ERROR_TEXT.too_many_rooms);
+        return;
+      }
+      result = lobby.createPrivate(player);
+    } else {
       const code = normalizeRoomCode(msg.code ?? '');
       result = code ? lobby.join(player, code) : { ok: false, code: 'room_not_found' };
     }
     if (!result.ok) {
       player.sendError(result.code, ERROR_TEXT[result.code]);
+      // guessing room codes: a few honest mistakes are fine, a string of them locks the address out for a while
+      if ((result.code === 'room_not_found' || result.code === 'room_full') && guard.failedJoin(ip)) ws.close(1008, 'too many failed joins');
       return;
     }
     player.joined = true;
@@ -185,11 +211,13 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     });
   }
 
-  wss.on('connection', (ws: WebSocket) => {
+  wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
     connections++;
+    const ip = clientIp(req, trustProxy);
     const player = new Player(nextPlayerId++, ws);
     const textBucket = new TokenBucket(20, 10);
     const inputBucket = new TokenBucket(120, 90);
+    const flood = { dropped: 0 };
     let alive = true;
     ws.on('pong', () => {
       alive = true;
@@ -211,8 +239,8 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     }, helloTimeoutMs);
     ws.on('message', (data: RawData, isBinary: boolean) => {
       try {
-        if (isBinary) onBinary(player, data, inputBucket);
-        else onText(player, ws, new TextDecoder().decode(toBytes(data)), textBucket);
+        if (isBinary) onBinary(player, ws, data, inputBucket, flood);
+        else onText(player, ws, new TextDecoder().decode(toBytes(data)), textBucket, ip);
       } catch (err) {
         console.error('message handler failed', err);
         ws.close(1011, 'internal error');
@@ -260,12 +288,16 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
         server.listen(port, host, () => {
           server.off('error', reject);
           startLoop();
+          sweeper = setInterval(() => guard.sweep(), 60_000);
+          sweeper.unref();
           resolve((server.address() as AddressInfo).port);
         });
       }),
     close: async () => {
       if (loop) clearInterval(loop);
       loop = null;
+      if (sweeper) clearInterval(sweeper);
+      sweeper = null;
       for (const client of wss.clients) client.terminate();
       lobby.dispose();
       wss.close();

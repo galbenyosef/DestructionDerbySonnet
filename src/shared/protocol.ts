@@ -53,6 +53,7 @@ export type ErrorCode =
   | 'room_not_found'
   | 'server_full'
   | 'rate_limited'
+  | 'too_many_rooms'
   | 'inactive';
 
 export type Phase = 'countdown' | 'live' | 'results';
