@@ -108,6 +108,22 @@ describe('Room combat', () => {
     expect(wreck.hp).toBe(0);
   });
 
+  it('sends the final standings, win bonus included, right after the results, whatever the throttle says', () => {
+    const { room, a } = duel({ rules: { resultsTicks: 600 } });
+    roundState(room).status.get(1)!.hp = 5;
+    headOn(room);
+    steps(room, 90);
+    expect(room.phase).toBe('results');
+    const log = messages(a.socket);
+    const at = log.findIndex((m) => m.t === 'results');
+    expect(at).toBeGreaterThan(-1);
+    const finalScores = log.slice(at + 1).find((m) => m.t === 'scores');
+    expect(finalScores).toBeDefined(); // the last points and the win bonus are not lost to the four-a-second throttle
+    const shown = (rows: unknown) => (rows as Array<{ slot: number; score: number; kills: number }>).map((r) => [r.slot, r.score, r.kills]);
+    expect(shown(finalScores!.rows)).toEqual(shown(log[at]!.rows));
+    expect(shown(finalScores!.rows)[0]![1]).toBeGreaterThan(150); // Ann: damage + kill + the win
+  });
+
   it('carries points from one round to the next', () => {
     const { room, a } = duel({ rules: { resultsTicks: 10 } });
     roundState(room).status.get(1)!.hp = 5;

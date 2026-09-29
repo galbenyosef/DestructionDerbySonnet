@@ -306,6 +306,9 @@ export class Room {
     this.phase = 'results';
     this.phaseTicks = 0;
     this.broadcast(this.phaseMessage());
+    // the standings with this round folded in go out at once, throttle or not: the board on screen must show what the results say
+    this.scoresSentAt = this.ticks;
+    this.broadcast({ t: 'scores', rows: this.scoreRows() });
     this.scoresDirty = false;
   }
 

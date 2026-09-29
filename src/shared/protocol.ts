@@ -131,6 +131,7 @@ export interface KoMessage {
   assists: number[];
   reason: KoReason;
 }
+/** The room's running totals: at most four a second while points change, and once more right after `results` with that round folded in. */
 export interface ScoresMessage {
   t: 'scores';
   rows: ScoreRow[];
