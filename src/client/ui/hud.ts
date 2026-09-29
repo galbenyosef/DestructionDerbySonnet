@@ -40,7 +40,10 @@ export function createHud(root: HTMLElement): Hud {
   const board = el('div', 'hud-board', wrap);
   const feed = el('ul', 'hud-feed', wrap);
 
-  const me = el('div', 'hud-me', wrap);
+  const bottom = el('div', 'hud-bottom', wrap); // the notice line above the health panel: one column, so they can never overlap
+  const notice = el('div', 'hud-notice', bottom);
+  notice.setAttribute('role', 'status');
+  const me = el('div', 'hud-me', bottom);
   const zones = el('div', 'hud-zones', me);
   const zoneCells = new Map<Zone, HTMLElement>();
   for (const z of ZONES) zoneCells.set(z, el('i', `zone zone-${z}`, zones));
@@ -58,8 +61,6 @@ export function createHud(root: HTMLElement): Hud {
   const flash = el('div', 'hud-flash', wrap);
   const stats = el('div', 'hud-stats', wrap);
   stats.hidden = true;
-  const notice = el('div', 'hud-notice', wrap);
-  notice.setAttribute('role', 'status');
   root.append(wrap);
 
   let noticeTimer: ReturnType<typeof setTimeout> | null = null;
