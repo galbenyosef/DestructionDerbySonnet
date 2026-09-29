@@ -1,6 +1,8 @@
 import { COMBAT } from '../shared/constants';
-import type { KoMessage, KoReason } from '../shared/protocol';
-import { AttackLog } from './combat';
+import type { HitMessage, KoMessage, KoReason } from '../shared/protocol';
+import type { Simulation } from '../shared/sim';
+import { AttackLog, HitTracker } from './combat';
+import { CarWatch } from './rules';
 
 /** How one car is doing in the running round. */
 export interface CarStatus {
@@ -13,6 +15,13 @@ export interface CarStatus {
   gained: number;
 }
 
+export interface StepEvents {
+  hits: HitMessage[];
+  kos: KoMessage[];
+}
+
+const round1 = (v: number): number => Math.round(v * 10) / 10;
+const round2 = (v: number): number => Math.round(v * 100) / 100;
 
 /**
  * Everything the server tracks about one round's cars: hit points, who is still running, who hit whom, and the points
@@ -21,11 +30,14 @@ export interface CarStatus {
  */
 export class RoundState {
   readonly status = new Map<number, CarStatus>();
+  private readonly tracker = new HitTracker();
   private readonly log = new AttackLog();
+  private readonly watches = new Map<number, CarWatch>();
 
   constructor(slots: readonly number[]) {
     for (const slot of slots) {
       this.status.set(slot, { slot, hp: COMBAT.MAX_HP, alive: true, kills: 0, damage: 0, gained: 0 });
+      this.watches.set(slot, new CarWatch());
     }
   }
 
@@ -72,4 +84,56 @@ export class RoundState {
     if (car) car.gained += COMBAT.WIN_POINTS;
   }
 
+  /**
+   * Reads the simulation's contacts for this tick: impacts become damage, and cars are eliminated when they run out of HP,
+   * flip, stall, leave the arena or sit still too long. Call once per live tick, after `sim.step()`.
+   */
+  step(tick: number, sim: Simulation): StepEvents {
+    const events: StepEvents = { hits: [], kos: [] };
+    const involved = new Set<number>();
+    for (const hit of this.tracker.update(tick, sim.contacts(COMBAT.SCRAPE_IMPULSE))) {
+      const victim = this.status.get(hit.victim);
+      if (!victim || !victim.alive) continue; // a wreck cannot be hurt any more
+      const dealt = Math.min(hit.damage, victim.hp);
+      victim.hp -= dealt;
+      involved.add(hit.victim);
+      if (hit.attacker >= 0) {
+        involved.add(hit.attacker);
+        this.log.record(hit.victim, hit.attacker, tick);
+        const attacker = this.status.get(hit.attacker);
+        if (attacker) {
+          attacker.damage += dealt;
+          attacker.gained += dealt * COMBAT.POINTS_PER_HP;
+        }
+      }
+      events.hits.push({
+        t: 'hit',
+        tick: hit.tick,
+        victim: hit.victim,
+        attacker: hit.attacker,
+        dmg: round1(dealt),
+        hp: round1(victim.hp),
+        zone: hit.zone,
+        j: round1(hit.impulse),
+        p: [round2(hit.point.x), round2(hit.point.y), round2(hit.point.z)],
+      });
+      if (victim.hp <= 1e-9) {
+        const ko = this.eliminate(hit.victim, 'damage', tick);
+        if (ko) events.kos.push(ko);
+      }
+    }
+    for (const car of this.status.values()) {
+      if (!car.alive) continue;
+      const watch = this.watches.get(car.slot)!;
+      const result = watch.update(sim.getState(car.slot), involved.has(car.slot));
+      if (result.drain > 0) car.hp -= result.drain;
+      const reason: KoReason | null =
+        car.hp <= 1e-9 ? 'stall' : result.fault === 'flipped' ? 'flipped' : result.fault === 'stuck' ? 'stuck' : result.fault === 'bounds' ? 'bounds' : null;
+      if (reason) {
+        const ko = this.eliminate(car.slot, reason, tick);
+        if (ko) events.kos.push(ko);
+      }
+    }
+    return events;
+  }
 }

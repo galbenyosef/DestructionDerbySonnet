@@ -189,6 +189,10 @@ export class Room {
     sim.step();
     this.phaseTicks++;
     if (this.phase === 'live') {
+      const events = state.step(sim.tick, sim);
+      for (const hit of events.hits) this.broadcast(hit);
+      for (const ko of events.kos) this.broadcast(ko);
+      if (events.hits.length + events.kos.length > 0) this.scoresDirty = true;
       this.checkEnd(state);
     }
     this.flushScores();

@@ -7,6 +7,7 @@ import type { Simulation } from '../../src/shared/sim';
 import type { CarState } from '../../src/shared/types';
 import { Player } from '../../src/server/player';
 import { Room, type RoomRules } from '../../src/server/room';
+import type { RoundState } from '../../src/server/round';
 import { FakeSocket } from './fakeSocket';
 
 export const TICK_MS = 1000 / 60;
@@ -89,6 +90,11 @@ export class Loopback {
 
   serverState(slot: number): CarState {
     return this.serverSim!.getState(slot);
+  }
+
+  /** The room's bookkeeping for the running round (hit points, who is out). */
+  get round(): RoundState {
+    return Reflect.get(this.room, 'state') as RoundState;
   }
 
   private clientStep(now: number): void {

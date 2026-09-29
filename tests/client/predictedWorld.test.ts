@@ -169,4 +169,18 @@ describe('PredictedWorld: what the player would see', () => {
     expect(Math.hypot(sim.getState(0).linvel.x, sim.getState(0).linvel.z)).toBeGreaterThan(8);
     expect(percentile(l.localErrors(), 0.95)).toBeLessThan(0.03);
   });
+
+  it('stops driving a car the server has taken out of the round', () => {
+    const l = loopback({ rttMs: 60, local: straight, remote: gentle });
+    l.run(3);
+    const sim = l.serverSim!;
+    const speed = (): number => Math.hypot(sim.getState(0).linvel.x, sim.getState(0).linvel.z);
+    const before = speed();
+    l.round.eliminate(0, 'flipped', 0); // the server wrecks the local car
+    l.run(4);
+    const server = sim.getState(0).pos;
+    const drawn = l.frames.at(-1)!.find((p) => p.slot === 0)!;
+    expect(Math.hypot(drawn.pos.x - server.x, drawn.pos.z - server.z)).toBeLessThan(0.5); // the client agrees about where the wreck is
+    expect(speed()).toBeLessThan(before * 0.6); // handbrake on and no engine: it slows down instead of driving on
+  });
 });
