@@ -11,6 +11,8 @@ export interface Hit {
   victim: number;
   /** Slot of the car that hit it, or -1 for a wall or obstacle. */
   attacker: number;
+  /** True when that car was already out when the impact began: a wreck is an obstacle, priced like a wall and credited to nobody. */
+  byWreck: boolean;
   /** Total impulse transmitted (kN·s), as the victim felt it. */
   impulse: number;
   zone: Zone;
@@ -23,6 +25,7 @@ export interface Hit {
 interface Window {
   victim: number;
   attacker: number;
+  wreck: boolean;
   openedAt: number;
   lastAt: number;
   /** Last tick that transmitted an impact-sized impulse (COMBAT.IMPACT_IMPULSE). */
@@ -44,13 +47,16 @@ interface Window {
 export class HitTracker {
   private readonly windows = new Map<number, Window>();
 
-  /** Feed the contacts of one simulation step (ticks must increase); returns the hits whose window closed on this tick. */
-  update(tick: number, contacts: readonly Contact[]): Hit[] {
+  /**
+   * Feed the contacts of one simulation step (ticks must increase); returns the hits whose window closed on this tick.
+   * `isRunning` says whether a car is still in the round: a hit whose attacker was already out when it began is a wreck's.
+   */
+  update(tick: number, contacts: readonly Contact[], isRunning: (slot: number) => boolean = () => true): Hit[] {
     const hits: Hit[] = [];
     for (const c of contacts) {
       if (!(c.impulse >= COMBAT.SCRAPE_IMPULSE)) continue;
-      this.add(tick, c.a, c.b, c.impulse, c.pointA, hits);
-      if (c.b >= 0) this.add(tick, c.b, c.a, c.impulse, c.pointB, hits);
+      this.add(tick, c.a, c.b, c.impulse, c.pointA, hits, isRunning);
+      if (c.b >= 0) this.add(tick, c.b, c.a, c.impulse, c.pointB, hits, isRunning);
     }
     for (const [key, w] of this.windows) {
       if (tick - w.lastAt < COMBAT.WINDOW_GAP_TICKS) continue;
@@ -65,7 +71,7 @@ export class HitTracker {
     this.windows.clear();
   }
 
-  private add(tick: number, victim: number, attacker: number, impulse: number, point: Vec3, hits: Hit[]): void {
+  private add(tick: number, victim: number, attacker: number, impulse: number, point: Vec3, hits: Hit[], isRunning: (slot: number) => boolean): void {
     const key = victim * 16 + attacker + 1;
     const impact = impulse >= COMBAT.IMPACT_IMPULSE;
     let w = this.windows.get(key);
@@ -76,7 +82,7 @@ export class HitTracker {
     }
     if (!w) {
       if (!impact) return; // a shove or a scrape never starts a hit
-      w = { victim, attacker, openedAt: tick, lastAt: tick, lastImpactAt: tick, impulse: 0, sx: 0, sy: 0, sz: 0 };
+      w = { victim, attacker, wreck: attacker >= 0 && !isRunning(attacker), openedAt: tick, lastAt: tick, lastImpactAt: tick, impulse: 0, sx: 0, sy: 0, sz: 0 };
       this.windows.set(key, w);
     } else if (impact) {
       w.lastImpactAt = tick;
@@ -94,8 +100,8 @@ export class HitTracker {
     const kns = w.impulse / 1000;
     const point = { x: w.sx / w.impulse, y: w.sy / w.impulse, z: w.sz / w.impulse };
     const zone = classifyZone(point);
-    const damage = hitDamage(kns, zone, w.attacker < 0);
-    if (damage > 0) hits.push({ tick: w.openedAt, victim: w.victim, attacker: w.attacker, impulse: kns, zone, damage, point });
+    const damage = hitDamage(kns, zone, w.attacker < 0 || w.wreck);
+    if (damage > 0) hits.push({ tick: w.openedAt, victim: w.victim, attacker: w.attacker, byWreck: w.wreck, impulse: kns, zone, damage, point });
   }
 }
 

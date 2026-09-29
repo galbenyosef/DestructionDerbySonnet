@@ -74,6 +74,25 @@ describe('HitTracker', () => {
     expect(hits[0]!.impulse).toBeCloseTo((9_000 + 3 * push + 3_000) / 1000, 9);
   });
 
+  it('marks a hit as a wreck\'s when the attacker was already out as the impact began, and prices it like a wall', () => {
+    const tracker = new HitTracker();
+    tracker.update(10, [carCar(19_200)], (slot) => slot !== 1); // car 1 is out
+    const hits = tracker.update(13, []);
+    const onLive = hits.find((h) => h.victim === 1)!; // car 0 is running: it hits the wreck
+    const onRammer = hits.find((h) => h.victim === 0)!;
+    expect([onRammer.attacker, onRammer.byWreck]).toEqual([1, true]);
+    expect([onLive.attacker, onLive.byWreck]).toEqual([0, false]);
+    expect(onRammer.damage).toBeCloseTo(onLive.damage * COMBAT.WALL_MULTIPLIER, 9); // same impulse and front zone, wall factor 0.5
+  });
+
+  it('keeps crediting an attacker that goes out after its impact began', () => {
+    const tracker = new HitTracker();
+    tracker.update(10, [carCar(9_000)], () => true);
+    tracker.update(11, [carCar(2_500)], (slot) => slot !== 1); // out now, but it was running when the blow landed
+    const hits = tracker.update(14, [], (slot) => slot !== 1);
+    expect(hits.find((h) => h.victim === 0)!.byWreck).toBe(false);
+  });
+
   it('starts a new hit after a quiet spell', () => {
     const hits = run([[carCar(9_000)], [], [], [], [], [], [], [], [], [], [carCar(9_000)]]);
     expect(hits.filter((h) => h.victim === 0)).toHaveLength(2);

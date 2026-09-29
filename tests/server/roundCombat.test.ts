@@ -100,6 +100,51 @@ describe('RoundState.step: impacts', () => {
   });
 });
 
+describe('RoundState.step: wrecks are obstacles', () => {
+  const wreckRun = (hpOfVictim?: number) => {
+    const t = setup([0, 1], headOn);
+    t.state.eliminate(1, 'disconnected', 0); // car 1 is out before the cars meet
+    if (hpOfVictim !== undefined) t.state.status.get(0)!.hp = hpOfVictim;
+    t.run(90);
+    return t;
+  };
+
+  it('hurts a car that rams it at wall strength, not at the strength of a running car', () => {
+    const alive = setup([0, 1], headOn);
+    alive.run(90);
+    const { hits } = wreckRun();
+    const byCar = alive.hits.find((h) => h.victim === 0)!;
+    const byWreck = hits.find((h) => h.victim === 0)!;
+    expect(byWreck.attacker).toBe(1); // still named, so a client can dent the wreck
+    expect(byWreck.dmg).toBeGreaterThan(5);
+    expect(Math.abs(byWreck.dmg - byCar.dmg * COMBAT.WALL_MULTIPLIER)).toBeLessThanOrEqual(0.1);
+  });
+
+  it('earns a wreck nothing: no points, no damage dealt, no kills, no place in the assist log', () => {
+    const { state } = wreckRun();
+    expect(state.status.get(1)).toMatchObject({ alive: false, kills: 0, damage: 0, gained: 0 });
+  });
+
+  it('does not name a wreck as the killer of the car that rams it', () => {
+    const { state, kos } = wreckRun(4);
+    expect(kos).toMatchObject([{ victim: 0, killer: -1, assists: [], reason: 'damage' }]);
+    expect(state.status.get(1)).toMatchObject({ kills: 0, gained: 0 });
+  });
+
+  it('still credits the last blow of a car that goes out while its hit is being paid out', () => {
+    const probe = setup([0, 1], headOn);
+    probe.run(90);
+    const opened = probe.hits.find((h) => h.victim === 0)!.tick; // the tick the impact began
+    const t = setup([0, 1], headOn);
+    t.state.status.get(0)!.hp = 4;
+    t.run(90, (tick) => {
+      if (tick === opened) t.state.eliminate(1, 'stuck', tick); // it was running when the blow landed
+    });
+    expect(t.kos.find((k) => k.victim === 0)).toMatchObject({ killer: 1, reason: 'damage' });
+    expect(t.state.status.get(1)!.kills).toBe(1);
+  });
+});
+
 describe('RoundState.step: eliminations', () => {
   it('eliminates a car whose HP runs out, credits the killer with the points, and lists assists', () => {
     const { state, hits, kos, run } = setup([0, 1, 2], (sim) => {

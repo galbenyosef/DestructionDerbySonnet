@@ -91,13 +91,13 @@ export class RoundState {
   step(tick: number, sim: Simulation): StepEvents {
     const events: StepEvents = { hits: [], kos: [] };
     const involved = new Set<number>();
-    for (const hit of this.tracker.update(tick, sim.contacts(COMBAT.SCRAPE_IMPULSE))) {
+    for (const hit of this.tracker.update(tick, sim.contacts(COMBAT.SCRAPE_IMPULSE), (slot) => this.isAlive(slot))) {
       const victim = this.status.get(hit.victim);
       if (!victim || !victim.alive) continue; // a wreck cannot be hurt any more
       const dealt = Math.min(hit.damage, victim.hp);
       victim.hp -= dealt;
       involved.add(hit.victim);
-      if (hit.attacker >= 0) {
+      if (hit.attacker >= 0 && !hit.byWreck) {
         involved.add(hit.attacker);
         this.log.record(hit.victim, hit.attacker, tick);
         const attacker = this.status.get(hit.attacker);
