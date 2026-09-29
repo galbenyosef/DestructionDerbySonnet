@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { COMBAT } from '../../src/shared/constants';
+import { COMBAT, NET } from '../../src/shared/constants';
 import { quatFromYaw } from '../../src/shared/math';
 import { initPhysics } from '../../src/shared/physics';
 import type { CarState } from '../../src/shared/types';
@@ -171,6 +171,31 @@ describe('Room combat', () => {
       for (const c of snap.cars) expect([c.state.pos.x, c.state.pos.y, c.state.pos.z, c.state.linvel.x, c.state.linvel.y, c.state.linvel.z].every(Number.isFinite)).toBe(true);
     }
     expect(messages(a.socket, 'ko')).toMatchObject([{ victim: 1, killer: -1, reason: 'bounds' }]);
+  });
+
+  it('greets a newcomer with the hits of the round so far, oldest first', () => {
+    const { room, a } = duel();
+    expect(room.greeting(join(room, 'Early').player).dents).toEqual([]);
+    headOn(room);
+    steps(room, 90);
+    const seen = messages(a.socket, 'hit');
+    expect(seen).toHaveLength(2);
+    const late = join(room, 'Cy');
+    expect(room.greeting(late.player).dents).toEqual(seen);
+  });
+
+  it('keeps only the latest hits for a newcomer, and starts every round with an empty log', () => {
+    const { room, a } = duel({ rules: { resultsTicks: 10 } });
+    const logHit = Reflect.get(room, 'logHit') as (h: unknown) => void;
+    for (let i = 0; i < NET.MAX_HIT_LOG + 36; i++) logHit.call(room, { t: 'hit', tick: i, victim: 0, attacker: 1, dmg: 1, hp: 90, zone: 'front', j: 5, p: [2.3, 0, 0] });
+    const dents = room.greeting(a.player).dents;
+    expect(dents).toHaveLength(NET.MAX_HIT_LOG);
+    expect([dents[0]!.tick, dents.at(-1)!.tick]).toEqual([36, NET.MAX_HIT_LOG + 35]);
+    roundState(room).status.get(1)!.hp = 5;
+    headOn(room);
+    steps(room, 120); // the collision ends the round, the results last 10 ticks, the next round starts
+    expect(room.round).toBe(2);
+    expect(room.greeting(a.player).dents).toEqual([]);
   });
 
   it('does not hurt anybody outside the live phase', () => {

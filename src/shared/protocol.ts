@@ -99,6 +99,8 @@ export interface WelcomeMessage {
   /** Where the room is in its round (null before the first round starts) and the running scores. */
   phase: PhaseMessage | null;
   scores: ScoreRow[];
+  /** The round's latest hits, oldest first (at most NET.MAX_HIT_LOG): a newcomer replays them to dent and strip the cars as the players saw them. */
+  dents: HitMessage[];
 }
 /** A new round's cars. Sent to every player, each with their own `you` (-1 when there is no car for them). */
 export interface RosterMessage {
@@ -215,6 +217,9 @@ const KO_REASONS: readonly unknown[] = ['damage', 'flipped', 'stuck', 'bounds', 
 const ROUND_ENDS: readonly unknown[] = ['last', 'timeout', 'no_humans', 'draw'];
 const isPhaseMessage = (v: unknown): v is PhaseMessage =>
   isObj(v) && v.t === 'phase' && PHASES.includes(v.phase) && isInt(v.round) && isNum(v.remainingMs) && v.remainingMs >= 0;
+const isHitMessage = (v: unknown): v is HitMessage =>
+  isObj(v) && v.t === 'hit' && isInt(v.tick) && isSlot(v.victim) && isSlotOrNone(v.attacker) && isNum(v.dmg) && v.dmg >= 0 && isNum(v.hp) &&
+  ZONES.includes(v.zone) && isNum(v.j) && v.j >= 0 && Array.isArray(v.p) && v.p.length === 3 && v.p.every(isNum);
 
 /** Defensive parser used by the client (and test clients) for server text frames. */
 export function parseServerMessage(raw: string): ServerMessage | null {
@@ -230,12 +235,14 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       const room = v.room;
       const players = v.players;
       const scores = v.scores;
+      const dents = v.dents;
       if (
         isInt(v.v) && isSlotOrNone(v.you) && isInt(v.epoch) && isInt(v.tickRate) && isInt(v.snapshotEvery) &&
         isObj(room) && typeof room.code === 'string' && typeof room.public === 'boolean' && isInt(room.capacity) &&
         isList(players) && players.every(isPlayerInfo) &&
         (v.phase === null || isPhaseMessage(v.phase)) &&
-        isList(scores) && scores.every(isScoreRow)
+        isList(scores) && scores.every(isScoreRow) &&
+        Array.isArray(dents) && dents.length <= NET.MAX_HIT_LOG && dents.every(isHitMessage)
       ) {
         return v as unknown as WelcomeMessage;
       }
@@ -249,13 +256,8 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
     case 'phase':
       return isPhaseMessage(v) ? v : null;
-    case 'hit': {
-      const p = v.p;
-      return isInt(v.tick) && isSlot(v.victim) && isSlotOrNone(v.attacker) && isNum(v.dmg) && v.dmg >= 0 && isNum(v.hp) &&
-        ZONES.includes(v.zone) && isNum(v.j) && v.j >= 0 && Array.isArray(p) && p.length === 3 && p.every(isNum)
-        ? (v as unknown as HitMessage)
-        : null;
-    }
+    case 'hit':
+      return isHitMessage(v) ? v : null;
     case 'ko': {
       const assists = v.assists;
       return isInt(v.tick) && isSlot(v.victim) && isSlotOrNone(v.killer) && isList(assists) && assists.every(isSlot) &&

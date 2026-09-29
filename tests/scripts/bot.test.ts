@@ -17,6 +17,7 @@ const welcome = (you: number): WelcomeMessage => ({
   snapshotEvery: 2,
   phase: { t: 'phase', phase: 'live', round: 1, remainingMs: 100_000 },
   scores: [],
+  dents: [],
 });
 
 /** Runs the real bot script against a stand-in server that greets it with `you`, and counts the input frames it sends for `ms`. */

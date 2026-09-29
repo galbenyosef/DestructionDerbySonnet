@@ -27,7 +27,7 @@ describe('Room joining', () => {
     join(room, 'Ann');
     expect(room.info()).toEqual({ code: 'ABCD', public: true, capacity: ARENA.MAX_CARS });
     expect(room.playerInfos()).toEqual([]);
-    expect(room.greeting(room.seated()[0]!)).toEqual({ you: -1, players: [], phase: null, scores: [] });
+    expect(room.greeting(room.seated()[0]!)).toEqual({ you: -1, players: [], phase: null, scores: [], dents: [] });
   });
 
   it('has the documented default round timing', () => {

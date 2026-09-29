@@ -179,14 +179,15 @@ describe('parseClientMessage', () => {
 
 describe('parseServerMessage', () => {
   const phase = { t: 'phase', phase: 'live', round: 2, remainingMs: 12_500 };
+  const hit = { t: 'hit', tick: 500, victim: 1, attacker: -1, dmg: 12.4, hp: 61.2, zone: 'rear', j: 14.8, p: [-2.3, 0, 0.4] };
   const welcome = {
     t: 'welcome', v: NET.PROTOCOL_VERSION, you: 2, epoch: 3, tickRate: 60, snapshotEvery: 2,
     room: { code: 'ABCD', public: true, capacity: 8 },
     players: [{ slot: 2, name: 'Max', color: 255 }, { slot: 3, name: 'Rusty', color: 1, bot: true }],
     phase,
     scores: [{ slot: 2, score: 120, kills: 1 }],
+    dents: [hit],
   };
-  const hit = { t: 'hit', tick: 500, victim: 1, attacker: -1, dmg: 12.4, hp: 61.2, zone: 'rear', j: 14.8, p: [-2.3, 0, 0.4] };
   const ko = { t: 'ko', tick: 900, victim: 3, killer: 1, assists: [0, 2], reason: 'damage' };
   const row = { slot: 1, name: 'Max', color: 255, bot: false, score: 320, gained: 220, kills: 2, damage: 170.5, hp: 44, alive: true };
   const results = { t: 'results', round: 2, winner: 1, reason: 'last', rows: [row] };
@@ -198,6 +199,12 @@ describe('parseServerMessage', () => {
     expect(parseServerMessage(JSON.stringify(roster))).toEqual(roster);
     expect(parseServerMessage(JSON.stringify({ t: 'pong', id: 1, c: 2, tick: 3 }))).toEqual({ t: 'pong', id: 1, c: 2, tick: 3 });
     expect(parseServerMessage(JSON.stringify({ t: 'error', code: 'room_full', message: 'full' }))).toEqual({ t: 'error', code: 'room_full', message: 'full' });
+  });
+
+  it('accepts a welcome whose hit log is empty or as long as it may be', () => {
+    expect(parseServerMessage(JSON.stringify({ ...welcome, dents: [] }))).toMatchObject({ dents: [] });
+    const full = Array.from({ length: NET.MAX_HIT_LOG }, (_, i) => ({ ...hit, tick: i }));
+    expect(parseServerMessage(JSON.stringify({ ...welcome, dents: full }))).toMatchObject({ dents: full });
   });
 
   it('accepts the match messages: phase, hit, ko, scores and results', () => {
@@ -221,6 +228,10 @@ describe('parseServerMessage', () => {
       JSON.stringify({ ...welcome, phase: undefined }),
       JSON.stringify({ ...welcome, scores: [{ slot: 9, score: 1, kills: 0 }] }),
       JSON.stringify({ ...welcome, players: [{ slot: 1, name: 'x', color: 1, bot: 'yes' }] }),
+      JSON.stringify({ ...welcome, dents: undefined }), // a welcome always carries the hit log, empty or not
+      JSON.stringify({ ...welcome, dents: [{ ...hit, zone: 'roof' }] }),
+      JSON.stringify({ ...welcome, dents: [{ t: 'ko' }] }),
+      JSON.stringify({ ...welcome, dents: Array.from({ length: NET.MAX_HIT_LOG + 1 }, () => hit) }),
       JSON.stringify({ t: 'roster', epoch: 1, round: 1, you: 0, players: [{ slot: 'a' }] }),
       JSON.stringify({ t: 'roster', epoch: 1, players: [] }), // no round / you
       JSON.stringify({ t: 'pong', id: 1 }),

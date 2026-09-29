@@ -6,6 +6,7 @@ import {
   SNAP_FLAG_HANDBRAKE,
   buildSnapshotPacket,
   encodeCarBlock,
+  type HitMessage,
   type Phase,
   type PhaseMessage,
   type PlayerInfo,
@@ -86,6 +87,8 @@ export class Room {
   private botsMade = 0;
   private scoresDirty = false;
   private scoresSentAt = 0;
+  /** The round's latest hits, oldest first (at most NET.MAX_HIT_LOG): what a player who joins mid-round needs to dent the cars. */
+  private hitLog: HitMessage[] = [];
   private disposed = false;
 
   constructor(
@@ -133,9 +136,15 @@ export class Room {
   }
 
   /** What a player who has just joined needs to know: their slot (-1 = watching), the cars, the phase and the scores. */
-  greeting(player: Player): { you: number; players: PlayerInfo[]; phase: PhaseMessage | null; scores: ScoreRow[] } {
+  greeting(player: Player): { you: number; players: PlayerInfo[]; phase: PhaseMessage | null; scores: ScoreRow[]; dents: HitMessage[] } {
     const me = this.participants.find((p) => p.player === player);
-    return { you: me?.slot ?? -1, players: this.playerInfos(), phase: this.sim ? this.phaseMessage() : null, scores: this.scoreRows() };
+    return {
+      you: me?.slot ?? -1,
+      players: this.playerInfos(),
+      phase: this.sim ? this.phaseMessage() : null,
+      scores: this.scoreRows(),
+      dents: [...this.hitLog],
+    };
   }
 
   /** Adds a human. Returns false when the room is full or closed. They get a car when the next round starts. */
@@ -190,7 +199,10 @@ export class Room {
     this.phaseTicks++;
     if (this.phase === 'live') {
       const events = state.step(sim.tick, sim);
-      for (const hit of events.hits) this.broadcast(hit);
+      for (const hit of events.hits) {
+        this.broadcast(hit);
+        this.logHit(hit);
+      }
       for (const ko of events.kos) this.broadcast(ko);
       if (events.hits.length + events.kos.length > 0) this.scoresDirty = true;
       this.checkEnd(state);
@@ -236,6 +248,7 @@ export class Room {
     this.sim = new Simulation(slots);
     this.state = new RoundState(slots);
     this.folded = false;
+    this.hitLog = [];
     this.phase = 'countdown';
     this.phaseTicks = 0;
     const cars = this.playerInfos();
@@ -375,6 +388,11 @@ export class Room {
       const open = car && !this.folded;
       return { slot, score: Math.round(p.score + (open ? car.gained : 0)), kills: p.kills + (open ? car.kills : 0) };
     });
+  }
+
+  private logHit(hit: HitMessage): void {
+    this.hitLog.push(hit);
+    if (this.hitLog.length > NET.MAX_HIT_LOG) this.hitLog.shift();
   }
 
   private broadcast(msg: ServerMessage, except?: Player): void {

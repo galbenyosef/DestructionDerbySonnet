@@ -149,7 +149,9 @@ export const ROUND = {
 
 export const NET = {
   /** 2: rounds, hit/ko/scores/results messages, `you` in the roster. */
-  PROTOCOL_VERSION: 2,
+  PROTOCOL_VERSION: 3,
+  /** The welcome message carries this many of the round's latest hits (a newcomer replays them to dent the cars). */
+  MAX_HIT_LOG: 64,
   /** Simulation ticks per snapshot: 2 => 30 Hz. */
   SNAPSHOT_EVERY: 2,
   INPUT_QUEUE_MAX: 6,

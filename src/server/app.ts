@@ -181,6 +181,7 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
       snapshotEvery: NET.SNAPSHOT_EVERY,
       phase: greeting.phase,
       scores: greeting.scores,
+      dents: greeting.dents,
     });
   }
 
