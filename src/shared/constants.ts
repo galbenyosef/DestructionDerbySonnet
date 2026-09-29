@@ -93,6 +93,53 @@ export const ARENA = {
   OBSTACLE_HALF: { x: 2.5, y: 0.75, z: 1.0 },
 } as const;
 
+/** Combat tuning. Impulses are in kN·s (1000 N·s), damage in HP, durations in simulation ticks (60 per second). */
+export const COMBAT = {
+  MAX_HP: 100,
+  /** A contact that transmits less impulse than this (N·s) in one tick is a scrape or a push, not an impact. */
+  SCRAPE_IMPULSE: 350,
+  /** An impact window closes after this many ticks without an impact, or when it has been open this long. */
+  WINDOW_GAP_TICKS: 3,
+  WINDOW_MAX_TICKS: 30,
+  /** Impacts weaker than this (kN·s) do no damage. */
+  MIN_IMPULSE: 1.5,
+  /** damage = DAMAGE_SCALE * (impulse - MIN_IMPULSE) ^ DAMAGE_EXPONENT, before the multipliers. */
+  DAMAGE_SCALE: 0.295,
+  DAMAGE_EXPONENT: 1.5,
+  /** Applied to the zone of the car that is hit: backing into an opponent is the smart move. */
+  ZONE_MULTIPLIER: { front: 1.15, rear: 0.9, left: 1, right: 1 },
+  /** Walls and obstacles hurt less than cars do. */
+  WALL_MULTIPLIER: 0.5,
+  /** An attacker stays credited (assist / kill) for this long after its last hit on a victim (5 s). */
+  ASSIST_TICKS: 300,
+  POINTS_PER_HP: 1,
+  KILL_POINTS: 50,
+  WIN_POINTS: 100,
+  /** Flipped: the car's up axis points less than this far up (world Y component) for FLIP_TICKS (3 s). */
+  FLIP_UP_Y: 0.25,
+  FLIP_TICKS: 180,
+  /** Immobile: horizontal speed under IMMOBILE_SPEED (m/s) for IMMOBILE_TICKS (8 s). */
+  IMMOBILE_SPEED: 0.6,
+  IMMOBILE_TICKS: 480,
+  /** Out of bounds: further than ARENA.RADIUS + BOUNDS_MARGIN from the centre, or below BOUNDS_MIN_Y. */
+  BOUNDS_MARGIN: 2,
+  BOUNDS_MIN_Y: -3,
+  /** Anti-stall: after STALL_TICKS (20 s) without hitting or being hit a car loses 2 HP per second until it is in a hit. */
+  STALL_TICKS: 1200,
+  STALL_DRAIN_PER_TICK: 2 / 60,
+} as const;
+
+/** Round structure. */
+export const ROUND = {
+  COUNTDOWN_TICKS: 5 * 60,
+  LIVE_TICKS: 4 * 60 * 60,
+  RESULTS_TICKS: 8 * 60,
+  /** Bots fill a room up to this many cars; they step aside as humans join. */
+  BOT_FILL: 4,
+  /** A player who joins during a countdown restarts it (so a burst of joiners plays together), at most this often per round. */
+  MAX_COUNTDOWN_RESTARTS: 8,
+} as const;
+
 export const NET = {
   PROTOCOL_VERSION: 1,
   /** Simulation ticks per snapshot: 2 => 30 Hz. */

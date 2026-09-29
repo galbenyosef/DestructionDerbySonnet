@@ -28,3 +28,6 @@ export interface WheelPose {
   /** Rapier steering angle in radians; positive = left. */
   steering: number;
 }
+
+/** Which side of a car took an impact: front (+X), rear (-X), left (-Z), right (+Z). */
+export type Zone = 'front' | 'rear' | 'left' | 'right';
