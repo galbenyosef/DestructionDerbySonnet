@@ -1,7 +1,7 @@
 import { ARENA, NET } from './constants';
 import { FLAG_HANDBRAKE, packInput, unpackInput, type CarInput } from './input';
 import { clamp } from './math';
-import type { CarState } from './types';
+import type { CarState, Zone } from './types';
 
 // ---- binary frames: first byte is the message type --------------------------------------------
 export const MSG_INPUT = 1;
@@ -37,6 +37,8 @@ export interface PlayerInfo {
   slot: number;
   name: string;
   color: number;
+  /** True for server-driven cars. */
+  bot?: boolean;
 }
 export interface RoomInfo {
   code: string;
@@ -53,20 +55,93 @@ export type ErrorCode =
   | 'rate_limited'
   | 'inactive';
 
+export type Phase = 'countdown' | 'live' | 'results';
+export type KoReason = 'damage' | 'flipped' | 'stuck' | 'bounds' | 'stall' | 'disconnected';
+export type RoundEnd = 'last' | 'timeout' | 'no_humans' | 'draw';
+
+export interface PhaseMessage {
+  t: 'phase';
+  phase: Phase;
+  round: number;
+  /** Time left in this phase when the message was sent. */
+  remainingMs: number;
+}
+export interface ScoreRow {
+  slot: number;
+  score: number;
+  kills: number;
+}
+export interface ResultRow {
+  slot: number;
+  name: string;
+  color: number;
+  bot: boolean;
+  /** Running total in this room, and what this round added. */
+  score: number;
+  gained: number;
+  kills: number;
+  damage: number;
+  hp: number;
+  alive: boolean;
+}
+
 export interface WelcomeMessage {
   t: 'welcome';
   v: number;
+  /** Your car's slot in the running round, or -1 when you are watching until the next round starts. */
   you: number;
   room: RoomInfo;
   epoch: number;
+  /** The cars of the running round. */
   players: PlayerInfo[];
   tickRate: number;
   snapshotEvery: number;
+  /** Where the room is in its round (null before the first round starts) and the running scores. */
+  phase: PhaseMessage | null;
+  scores: ScoreRow[];
 }
+/** A new round's cars. Sent to every player, each with their own `you` (-1 when there is no car for them). */
 export interface RosterMessage {
   t: 'roster';
   epoch: number;
+  round: number;
+  you: number;
   players: PlayerInfo[];
+}
+export interface HitMessage {
+  t: 'hit';
+  tick: number;
+  victim: number;
+  /** Slot of the car that hit, or -1 for a wall or obstacle. */
+  attacker: number;
+  /** HP taken off, and the victim's HP afterwards. */
+  dmg: number;
+  hp: number;
+  zone: Zone;
+  /** Impulse of the impact in kN·s, and the contact point in the victim's local frame (metres). */
+  j: number;
+  p: [number, number, number];
+}
+export interface KoMessage {
+  t: 'ko';
+  tick: number;
+  victim: number;
+  /** Slot of the car credited with the elimination, or -1. */
+  killer: number;
+  assists: number[];
+  reason: KoReason;
+}
+export interface ScoresMessage {
+  t: 'scores';
+  rows: ScoreRow[];
+}
+export interface ResultsMessage {
+  t: 'results';
+  round: number;
+  /** Slot of the winner, or -1 for a draw. */
+  winner: number;
+  reason: RoundEnd;
+  rows: ResultRow[];
 }
 export interface PongMessage {
   t: 'pong';
@@ -79,7 +154,16 @@ export interface ErrorMessage {
   code: ErrorCode;
   message: string;
 }
-export type ServerMessage = WelcomeMessage | RosterMessage | PongMessage | ErrorMessage;
+export type ServerMessage =
+  | WelcomeMessage
+  | RosterMessage
+  | PhaseMessage
+  | HitMessage
+  | KoMessage
+  | ScoresMessage
+  | ResultsMessage
+  | PongMessage
+  | ErrorMessage;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -115,8 +199,21 @@ export function parseClientMessage(raw: string): ClientMessage | null {
   return null;
 }
 
+const isSlot = (v: unknown): v is number => isInt(v) && v >= 0 && v < ARENA.MAX_CARS;
+const isSlotOrNone = (v: unknown): v is number => isInt(v) && v >= -1 && v < ARENA.MAX_CARS;
+const isList = (v: unknown): v is unknown[] => Array.isArray(v) && v.length <= ARENA.MAX_CARS;
 const isPlayerInfo = (v: unknown): v is PlayerInfo =>
-  isObj(v) && isInt(v.slot) && typeof v.name === 'string' && isInt(v.color);
+  isObj(v) && isSlot(v.slot) && typeof v.name === 'string' && isInt(v.color) && (v.bot === undefined || typeof v.bot === 'boolean');
+const isScoreRow = (v: unknown): v is ScoreRow => isObj(v) && isSlot(v.slot) && isNum(v.score) && isNum(v.kills);
+const isResultRow = (v: unknown): v is ResultRow =>
+  isObj(v) && isSlot(v.slot) && typeof v.name === 'string' && isInt(v.color) && typeof v.bot === 'boolean' &&
+  isNum(v.score) && isNum(v.gained) && isNum(v.kills) && isNum(v.damage) && isNum(v.hp) && typeof v.alive === 'boolean';
+const PHASES: readonly unknown[] = ['countdown', 'live', 'results'];
+const ZONES: readonly unknown[] = ['front', 'rear', 'left', 'right'];
+const KO_REASONS: readonly unknown[] = ['damage', 'flipped', 'stuck', 'bounds', 'stall', 'disconnected'];
+const ROUND_ENDS: readonly unknown[] = ['last', 'timeout', 'no_humans', 'draw'];
+const isPhaseMessage = (v: unknown): v is PhaseMessage =>
+  isObj(v) && v.t === 'phase' && PHASES.includes(v.phase) && isInt(v.round) && isNum(v.remainingMs) && v.remainingMs >= 0;
 
 /** Defensive parser used by the client (and test clients) for server text frames. */
 export function parseServerMessage(raw: string): ServerMessage | null {
@@ -131,10 +228,13 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     case 'welcome': {
       const room = v.room;
       const players = v.players;
+      const scores = v.scores;
       if (
-        isInt(v.v) && isInt(v.you) && isInt(v.epoch) && isInt(v.tickRate) && isInt(v.snapshotEvery) &&
+        isInt(v.v) && isSlotOrNone(v.you) && isInt(v.epoch) && isInt(v.tickRate) && isInt(v.snapshotEvery) &&
         isObj(room) && typeof room.code === 'string' && typeof room.public === 'boolean' && isInt(room.capacity) &&
-        Array.isArray(players) && players.every(isPlayerInfo)
+        isList(players) && players.every(isPlayerInfo) &&
+        (v.phase === null || isPhaseMessage(v.phase)) &&
+        isList(scores) && scores.every(isScoreRow)
       ) {
         return v as unknown as WelcomeMessage;
       }
@@ -142,8 +242,32 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
     case 'roster': {
       const players = v.players;
-      return isInt(v.epoch) && Array.isArray(players) && players.every(isPlayerInfo) ? (v as unknown as RosterMessage) : null;
+      return isInt(v.epoch) && isInt(v.round) && isSlotOrNone(v.you) && isList(players) && players.every(isPlayerInfo)
+        ? (v as unknown as RosterMessage)
+        : null;
     }
+    case 'phase':
+      return isPhaseMessage(v) ? v : null;
+    case 'hit': {
+      const p = v.p;
+      return isInt(v.tick) && isSlot(v.victim) && isSlotOrNone(v.attacker) && isNum(v.dmg) && v.dmg >= 0 && isNum(v.hp) &&
+        ZONES.includes(v.zone) && isNum(v.j) && v.j >= 0 && Array.isArray(p) && p.length === 3 && p.every(isNum)
+        ? (v as unknown as HitMessage)
+        : null;
+    }
+    case 'ko': {
+      const assists = v.assists;
+      return isInt(v.tick) && isSlot(v.victim) && isSlotOrNone(v.killer) && isList(assists) && assists.every(isSlot) &&
+        KO_REASONS.includes(v.reason)
+        ? (v as unknown as KoMessage)
+        : null;
+    }
+    case 'scores':
+      return isList(v.rows) && v.rows.every(isScoreRow) ? (v as unknown as ScoresMessage) : null;
+    case 'results':
+      return isInt(v.round) && isSlotOrNone(v.winner) && ROUND_ENDS.includes(v.reason) && isList(v.rows) && v.rows.every(isResultRow)
+        ? (v as unknown as ResultsMessage)
+        : null;
     case 'pong':
       return isNum(v.id) && isNum(v.c) && isInt(v.tick) ? (v as unknown as PongMessage) : null;
     case 'error':

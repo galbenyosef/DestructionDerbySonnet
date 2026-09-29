@@ -141,7 +141,8 @@ export const ROUND = {
 } as const;
 
 export const NET = {
-  PROTOCOL_VERSION: 1,
+  /** 2: rounds, hit/ko/scores/results messages, `you` in the roster. */
+  PROTOCOL_VERSION: 2,
   /** Simulation ticks per snapshot: 2 => 30 Hz. */
   SNAPSHOT_EVERY: 2,
   /** Ticks between a roster change and the world rebuild (baseline policy). */

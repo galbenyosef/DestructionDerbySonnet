@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { NET } from '../../src/shared/constants';
 import { initPhysics } from '../../src/shared/physics';
 import { encodeInput, type RosterMessage } from '../../src/shared/protocol';
 import { createGameServer, originAllowed, type GameServer } from '../../src/server/app';
@@ -138,7 +139,7 @@ describe('hostile and broken clients', () => {
     evil.sendRaw(encodeInput(1, forward)); // binary before hello: silently ignored
     evil.sendRaw('this is not json');
     expect(await evil.waitFor(() => evil.errors()[0])).toMatchObject({ code: 'bad_message' });
-    evil.sendRaw(JSON.stringify({ t: 'hello', v: 1, name: 5, color: 'red', mode: 'quick' })); // wrong types
+    evil.sendRaw(JSON.stringify({ t: 'hello', v: NET.PROTOCOL_VERSION, name: 5, color: 'red', mode: 'quick' })); // wrong types
     await evil.waitFor(() => evil.errors().length >= 2, 2000, 'second error');
     evil.hello({ v: 99 }); // wrong protocol version
     await evil.waitFor(() => evil.errors().find((e) => e.code === 'bad_version'), 2000, 'bad_version');

@@ -37,7 +37,7 @@ function createRoom(url) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(url);
     const timer = setTimeout(() => reject(new Error('ws timeout ' + url)), 5000);
-    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', v: 1, name: 'smoke', color: 255, mode: 'create' })));
+    ws.on('open', () => ws.send(JSON.stringify({ t: 'hello', v: 2, name: 'smoke', color: 255, mode: 'create' })));
     ws.on('message', (d, isBinary) => {
       if (isBinary) return;
       const m = JSON.parse(String(d));

@@ -96,8 +96,8 @@ export class Room {
     this.epoch = (this.epoch + 1) & 0xff;
     if (players.length > 0) this.sim = new Simulation(players.map((p) => p.slot));
     for (const p of players) p.resetInputState();
-    const roster = { t: 'roster', epoch: this.epoch, players: this.playerInfos() } as const;
-    for (const p of players) p.send(roster);
+    const infos = this.playerInfos();
+    for (const p of players) p.send({ t: 'roster', epoch: this.epoch, round: 0, you: p.slot, players: infos });
   }
 
   /** One 60 Hz tick. */

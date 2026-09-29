@@ -168,6 +168,8 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
       players: result.room.playerInfos(),
       tickRate: PHYSICS.TICK_RATE,
       snapshotEvery: NET.SNAPSHOT_EVERY,
+      phase: null,
+      scores: [],
     });
   }
 

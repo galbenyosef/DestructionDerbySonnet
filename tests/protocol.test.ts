@@ -178,16 +178,36 @@ describe('parseClientMessage', () => {
 });
 
 describe('parseServerMessage', () => {
+  const phase = { t: 'phase', phase: 'live', round: 2, remainingMs: 12_500 };
+  const welcome = {
+    t: 'welcome', v: NET.PROTOCOL_VERSION, you: 2, epoch: 3, tickRate: 60, snapshotEvery: 2,
+    room: { code: 'ABCD', public: true, capacity: 8 },
+    players: [{ slot: 2, name: 'Max', color: 255 }, { slot: 3, name: 'Rusty', color: 1, bot: true }],
+    phase,
+    scores: [{ slot: 2, score: 120, kills: 1 }],
+  };
+  const hit = { t: 'hit', tick: 500, victim: 1, attacker: -1, dmg: 12.4, hp: 61.2, zone: 'rear', j: 14.8, p: [-2.3, 0, 0.4] };
+  const ko = { t: 'ko', tick: 900, victim: 3, killer: 1, assists: [0, 2], reason: 'damage' };
+  const row = { slot: 1, name: 'Max', color: 255, bot: false, score: 320, gained: 220, kills: 2, damage: 170.5, hp: 44, alive: true };
+  const results = { t: 'results', round: 2, winner: 1, reason: 'last', rows: [row] };
+
   it('accepts well-formed server messages', () => {
-    const welcome = {
-      t: 'welcome', v: 1, you: 2, epoch: 3, tickRate: 60, snapshotEvery: 2,
-      room: { code: 'ABCD', public: true, capacity: 8 },
-      players: [{ slot: 2, name: 'Max', color: 255 }],
-    };
     expect(parseServerMessage(JSON.stringify(welcome))).toEqual(welcome);
-    expect(parseServerMessage(JSON.stringify({ t: 'roster', epoch: 1, players: [] }))).toEqual({ t: 'roster', epoch: 1, players: [] });
+    expect(parseServerMessage(JSON.stringify({ ...welcome, you: -1, phase: null, scores: [] }))).toMatchObject({ you: -1, phase: null });
+    const roster = { t: 'roster', epoch: 1, round: 4, you: -1, players: [] };
+    expect(parseServerMessage(JSON.stringify(roster))).toEqual(roster);
     expect(parseServerMessage(JSON.stringify({ t: 'pong', id: 1, c: 2, tick: 3 }))).toEqual({ t: 'pong', id: 1, c: 2, tick: 3 });
     expect(parseServerMessage(JSON.stringify({ t: 'error', code: 'room_full', message: 'full' }))).toEqual({ t: 'error', code: 'room_full', message: 'full' });
+  });
+
+  it('accepts the match messages: phase, hit, ko, scores and results', () => {
+    expect(parseServerMessage(JSON.stringify(phase))).toEqual(phase);
+    expect(parseServerMessage(JSON.stringify(hit))).toEqual(hit);
+    expect(parseServerMessage(JSON.stringify(ko))).toEqual(ko);
+    const scores = { t: 'scores', rows: [{ slot: 0, score: 10, kills: 0 }, { slot: 5, score: 260.5, kills: 3 }] };
+    expect(parseServerMessage(JSON.stringify(scores))).toEqual(scores);
+    expect(parseServerMessage(JSON.stringify(results))).toEqual(results);
+    expect(parseServerMessage(JSON.stringify({ ...results, winner: -1, reason: 'draw' }))).toMatchObject({ winner: -1, reason: 'draw' });
   });
 
   it('rejects malformed server messages', () => {
@@ -195,12 +215,45 @@ describe('parseServerMessage', () => {
       'nope',
       '{}',
       JSON.stringify({ t: 'welcome' }),
-      JSON.stringify({ t: 'welcome', v: 1, you: 'x', epoch: 0, tickRate: 60, snapshotEvery: 2, room: {}, players: [] }),
-      JSON.stringify({ t: 'roster', epoch: 1, players: [{ slot: 'a' }] }),
+      JSON.stringify({ ...welcome, you: 'x' }),
+      JSON.stringify({ ...welcome, you: 8 }),
+      JSON.stringify({ ...welcome, phase: { ...phase, phase: 'warmup' } }),
+      JSON.stringify({ ...welcome, phase: undefined }),
+      JSON.stringify({ ...welcome, scores: [{ slot: 9, score: 1, kills: 0 }] }),
+      JSON.stringify({ ...welcome, players: [{ slot: 1, name: 'x', color: 1, bot: 'yes' }] }),
+      JSON.stringify({ t: 'roster', epoch: 1, round: 1, you: 0, players: [{ slot: 'a' }] }),
+      JSON.stringify({ t: 'roster', epoch: 1, players: [] }), // no round / you
       JSON.stringify({ t: 'pong', id: 1 }),
       JSON.stringify({ t: 'error', code: 5, message: 'x' }),
     ]) {
       expect(parseServerMessage(raw)).toBeNull();
+    }
+  });
+
+  it('rejects malformed match messages, including values a real server never sends', () => {
+    for (const bad of [
+      { ...phase, phase: 'warmup' },
+      { ...phase, remainingMs: -1 },
+      { ...phase, remainingMs: Number.NaN },
+      { ...phase, round: 1.5 },
+      { ...hit, zone: 'roof' },
+      { ...hit, victim: -1 }, // the victim is always a car
+      { ...hit, attacker: 8 },
+      { ...hit, dmg: -3 },
+      { ...hit, p: [1, 2] },
+      { ...hit, p: [1, 2, 'x'] },
+      { ...ko, reason: 'boredom' },
+      { ...ko, assists: [9] },
+      { ...ko, assists: Array.from({ length: 9 }, (_, i) => i % 8) },
+      { ...ko, killer: -2 },
+      { t: 'scores', rows: 'lots' },
+      { t: 'scores', rows: [{ slot: 0, score: 'a', kills: 0 }] },
+      { ...results, winner: 8 },
+      { ...results, reason: 'quit' },
+      { ...results, rows: [{ ...row, alive: 'yes' }] },
+      { ...results, rows: Array.from({ length: 9 }, () => row) },
+    ]) {
+      expect(parseServerMessage(JSON.stringify(bad))).toBeNull();
     }
   });
 });
