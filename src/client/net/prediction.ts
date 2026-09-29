@@ -1,4 +1,4 @@
-import { ARENA } from '../../shared/constants';
+import { ARENA, COMBAT } from '../../shared/constants';
 import { NEUTRAL_INPUT, PARKED_INPUT, quantizeInput, type CarInput } from '../../shared/input';
 import { quatConjugate, quatMul, quatNormalize, vadd, vlen, vsub } from '../../shared/math';
 import { SNAP_FLAG_ALIVE, SNAP_FLAG_HANDBRAKE, type Snapshot, type SnapshotCar } from '../../shared/protocol';
@@ -61,6 +61,19 @@ export interface PredictedPose {
   /** False for cars the latest snapshot no longer lists (a departed player's parked car). */
   visible: boolean;
 }
+
+/** The local car touching another car or a wall, as the local prediction saw it (`kns` in kN·s; `point` in the local car's own frame). */
+export interface LocalImpact {
+  /** The local car's slot. */
+  slot: number;
+  /** The car it touched, or -1 for a wall or an obstacle. */
+  other: number;
+  kns: number;
+  point: Vec3;
+}
+
+/** More than this many unread impacts means nobody is reading them: the oldest are dropped. */
+const MAX_UNREAD_IMPACTS = 64;
 
 interface HistoryEntry {
   input: CarInput;
@@ -133,6 +146,7 @@ export class Predictor {
   failure: string | null = null;
   private readonly history = new Map<number, HistoryEntry>();
   private readonly remoteInputs = new Map<number, CarInput>();
+  private impacts: LocalImpact[] = [];
   private readonly meta = new Map<number, { flags: number; hp: number; throttle: number; steer: number }>();
   private present = new Set<number>();
   private prev = new Map<number, CarState>();
@@ -209,6 +223,7 @@ export class Predictor {
     this.stalled = false;
     this.lastTick = -1;
     this.remoteInputs.clear();
+    this.impacts = [];
     this.meta.clear();
     this.present = new Set();
     for (const entry of this.history.values()) entry.after = null;
@@ -224,9 +239,21 @@ export class Predictor {
     if (this.sim && this.synced) {
       // While stalled the server is not hearing us and plays neutral input for us, so predict exactly that.
       this.simulate(this.stalled ? NEUTRAL_INPUT : q);
+      this.noteImpacts();
       if (this.hasLocalCar && !this.stalled) entry.after = this.curr.get(this.mySlot) ?? null;
     }
     return this.seq;
+  }
+
+  /**
+   * The impacts the local car has had since the last call, in order, for sounds, sparks and shaking the camera the moment they
+   * happen. They are read from live ticks only: a replay after a snapshot re-simulates the same collision many times and would
+   * repeat every one of them. (The damage is the server's business; this is only for the senses.)
+   */
+  takeImpacts(): LocalImpact[] {
+    const out = this.impacts;
+    this.impacts = [];
+    return out;
   }
 
   /** Rewinds to the snapshot and replays the unacknowledged inputs. Never throws on hostile or odd snapshots. */
@@ -382,6 +409,16 @@ export class Predictor {
   private appliedLocal(input: CarInput): CarInput {
     const alive = ((this.meta.get(this.mySlot)?.flags ?? SNAP_FLAG_ALIVE) & SNAP_FLAG_ALIVE) !== 0;
     return this.live && alive ? input : PARKED_INPUT;
+  }
+
+  /** Reads the contacts of the tick the local prediction has just stepped and keeps those of the local car. */
+  private noteImpacts(): void {
+    if (!this.sim || !this.hasLocalCar) return;
+    for (const c of this.sim.contacts(COMBAT.SCRAPE_IMPULSE)) {
+      if (c.a === this.mySlot) this.impacts.push({ slot: c.a, other: c.b, kns: c.impulse / 1000, point: c.pointA });
+      else if (c.b === this.mySlot) this.impacts.push({ slot: c.b, other: c.a, kns: c.impulse / 1000, point: c.pointB });
+    }
+    if (this.impacts.length > MAX_UNREAD_IMPACTS) this.impacts.splice(0, this.impacts.length - MAX_UNREAD_IMPACTS);
   }
 
   private simulate(localInput: CarInput): void {

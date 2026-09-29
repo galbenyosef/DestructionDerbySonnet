@@ -2,7 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { ClientSession } from '../../src/client/net/session';
 import type { CarInput } from '../../src/shared/input';
 import { initPhysics } from '../../src/shared/physics';
-import { SNAP_FLAG_ALIVE, type Snapshot } from '../../src/shared/protocol';
+import { SNAP_FLAG_ALIVE, SNAP_FLAG_GROUNDED, SNAP_FLAG_HANDBRAKE, type Snapshot } from '../../src/shared/protocol';
 import { Simulation } from '../../src/shared/sim';
 
 beforeAll(async () => {
@@ -267,5 +267,49 @@ describe('ClientSession fallback', () => {
     expect(session.mode).toBe('predict');
     expect(reasons).toEqual([]);
     session.dispose();
+  });
+});
+
+describe('ClientSession draw poses for effects', () => {
+  it('carry the throttle, the handbrake and whether the wheels touch the ground, in both modes', () => {
+    for (const mode of ['predict', 'interp'] as const) {
+      const session = new ClientSession(mode);
+      const w = world([0, 1]);
+      session.onWelcome(0, 3);
+      const cars = (tick: number): Snapshot => ({
+        epoch: 3,
+        tick,
+        ackSeq: 0,
+        cars: [
+          { slot: 0, flags: SNAP_FLAG_ALIVE | SNAP_FLAG_GROUNDED, hp: 80, state: w.getState(0), throttle: 0.5, steer: 0 },
+          { slot: 1, flags: SNAP_FLAG_ALIVE | SNAP_FLAG_HANDBRAKE, hp: 60, state: w.getState(1), throttle: -1, steer: 0 },
+        ],
+      });
+      session.onSnapshot(cars(10), 1000);
+      session.onSnapshot(cars(12), 1033);
+      const poses = session.poses(1, 0.016, 1060);
+      const remote = poses.find((p) => p.slot === 1)!;
+      expect(remote).toMatchObject({ throttle: -1, handbrake: true, grounded: false });
+      expect(poses.find((p) => p.slot === 0)).toMatchObject({ handbrake: false, grounded: true });
+      session.dispose();
+    }
+  });
+
+  it('hands over the local car\'s impacts in prediction mode, and has none in interpolation mode', () => {
+    const w = world([0, 1]);
+    w.setState(0, { pos: { x: -9, y: 1.07, z: 0 }, quat: { x: 0, y: 0, z: 0, w: 1 }, linvel: { x: 10, y: 0, z: 0 }, angvel: { x: 0, y: 0, z: 0 } });
+    w.setState(1, { pos: { x: 9, y: 1.07, z: 0 }, quat: { x: 0, y: 1, z: 0, w: 0 }, linvel: { x: -10, y: 0, z: 0 }, angvel: { x: 0, y: 0, z: 0 } });
+    const predicting = new ClientSession('predict');
+    predicting.onWelcome(0, 3);
+    predicting.onSnapshot(snapshotOf(w, { tick: 2 }), 1000);
+    const seen = [];
+    for (let i = 0; i < 90; i++) {
+      predicting.nextInput({ throttle: 0, steer: 0, handbrake: false });
+      seen.push(...predicting.takeImpacts());
+    }
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((i) => i.slot === 0)).toBe(true);
+    predicting.dispose();
+    expect(new ClientSession('interp').takeImpacts()).toEqual([]);
   });
 });

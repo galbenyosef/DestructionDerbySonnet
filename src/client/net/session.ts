@@ -1,8 +1,9 @@
 import type { CarInput } from '../../shared/input';
-import { SNAP_FLAG_ALIVE, type Phase, type Snapshot } from '../../shared/protocol';
+import { SNAP_FLAG_ALIVE, SNAP_FLAG_GROUNDED, SNAP_FLAG_HANDBRAKE, type Phase, type Snapshot } from '../../shared/protocol';
 import type { Quat, Vec3 } from '../../shared/types';
 import { SnapshotInterpolator } from './interp';
 import { PredictedWorld, type PredictedWorldOptions } from './predictedWorld';
+import type { LocalImpact } from './prediction';
 
 export type NetMode = 'predict' | 'interp';
 
@@ -18,6 +19,10 @@ export interface DrawPose {
   /** False for a wreck. */
   alive: boolean;
   hp: number;
+  /** The driver's throttle (-1..1) and handbrake, and whether any wheel touches the ground: for engine sound, tyre marks and dust. */
+  throttle: number;
+  handbrake: boolean;
+  grounded: boolean;
 }
 
 export interface ClientSessionOptions {
@@ -143,6 +148,9 @@ export class ClientSession {
         extrapolated: false,
         alive: (p.flags & SNAP_FLAG_ALIVE) !== 0,
         hp: p.hp,
+        throttle: p.throttle,
+        handbrake: (p.flags & SNAP_FLAG_HANDBRAKE) !== 0,
+        grounded: (p.flags & SNAP_FLAG_GROUNDED) !== 0,
       }));
     }
     return this.interpolator.sample(nowMs).map((p) => ({
@@ -155,7 +163,15 @@ export class ClientSession {
       extrapolated: p.extrapolated,
       alive: (p.flags & SNAP_FLAG_ALIVE) !== 0,
       hp: p.hp,
+      throttle: p.throttle,
+      handbrake: (p.flags & SNAP_FLAG_HANDBRAKE) !== 0,
+      grounded: (p.flags & SNAP_FLAG_GROUNDED) !== 0,
     }));
+  }
+
+  /** The local car's collisions since the last call, as the local prediction saw them (nothing in interpolation mode). */
+  takeImpacts(): LocalImpact[] {
+    return this.world?.predictor.takeImpacts() ?? [];
   }
 
   dispose(): void {
