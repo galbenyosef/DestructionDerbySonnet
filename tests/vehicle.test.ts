@@ -367,12 +367,14 @@ describe('Simulation: rosters, inputs and lifecycle', () => {
       for (let i = 0; i < 10; i++) s.step();
       s.dispose();
     };
-    for (let i = 0; i < 100; i++) cycle(); // warm up the allocator
+    for (let i = 0; i < 150; i++) cycle(); // warm up the allocator
     const before = process.memoryUsage().rss;
     for (let i = 0; i < 300; i++) cycle();
     const growthMb = (process.memoryUsage().rss - before) / 1048576;
     // Coarse on purpose: a missing free() only delays reclamation (see the test above), so this bound cannot see
-    // it. It catches gross retention, e.g. a world kept alive by a cache or listener. Measured growth is ~5-10 MB.
-    expect(growthMb).toBeLessThan(50);
+    // it. It catches gross retention, e.g. a world kept alive by a cache or listener (a world is a megabyte or more,
+    // so 300 retained ones are 300 MB). Measured growth is 5-10 MB on a quiet machine and up to ~65 MB when the whole
+    // suite runs in parallel with other work, which is what made the earlier 50 MB bound fail now and then.
+    expect(growthMb).toBeLessThan(150);
   });
 });
