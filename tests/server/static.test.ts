@@ -17,6 +17,12 @@ beforeAll(async () => {
   fs.writeFileSync(path.join(root, 'index.html'), '<h1>hello</h1>');
   fs.writeFileSync(path.join(root, 'assets', 'app-abc.js'), 'console.log(1)');
   fs.writeFileSync(path.join(tmp, 'secret.txt'), 'top secret');
+  fs.writeFileSync(path.join(root, '.env'), 'SECRET_KEY=1');
+  fs.writeFileSync(path.join(root, 'assets', '.hidden.js'), 'hidden');
+  fs.mkdirSync(path.join(tmp, 'outside'));
+  fs.writeFileSync(path.join(tmp, 'outside', 'leak.txt'), 'leaked');
+  fs.symlinkSync(path.join(tmp, 'secret.txt'), path.join(root, 'link.txt'));
+  fs.symlinkSync(path.join(tmp, 'outside'), path.join(root, 'outdir'));
   const handler = createStaticHandler(root);
   server = http.createServer((req, res) => {
     if (!handler(req, res)) {
@@ -64,6 +70,31 @@ describe('static handler', () => {
       expect(res.status).not.toBe(200);
       expect(await res.text()).not.toContain('top secret');
     }
+  });
+
+  it('never serves dotfiles', async () => {
+    for (const p of ['/.env', '/assets/.hidden.js', '/.git/config']) {
+      const res = await fetch(base + p);
+      expect(res.status).toBe(404);
+      expect(await res.text()).toBe('fallthrough');
+    }
+  });
+
+  it('does not follow a symlink out of the root, to a file or to a directory', async () => {
+    for (const p of ['/link.txt', '/outdir/leak.txt']) {
+      const res = await fetch(base + p);
+      const body = await res.text();
+      expect(res.status).toBe(404);
+      expect(body).not.toContain('secret');
+      expect(body).not.toContain('leaked');
+    }
+  });
+
+  it('decides the caching from the file the request resolves to, not from how the path is spelled', async () => {
+    const res = await fetch(`${base}/assets/..%2findex.html`); // resolves to /index.html
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('<h1>hello</h1>');
+    expect(res.headers.get('cache-control')).toBe('no-cache');
   });
 
   it('rejects malformed percent-encoding', async () => {

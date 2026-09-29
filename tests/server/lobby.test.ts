@@ -27,6 +27,28 @@ function ok(result: JoinResult) {
   return result;
 }
 
+describe('Lobby room codes', () => {
+  it('are not drawn from Math.random: a stuck Math.random still gives every room its own code', () => {
+    const stuck = vi.spyOn(Math, 'random').mockReturnValue(0);
+    try {
+      const lobby = makeLobby(30);
+      const codes = new Set<string>();
+      for (let i = 0; i < 20; i++) codes.add(ok(lobby.createPrivate(newPlayer())).room.code);
+      expect(codes.size).toBe(20);
+      for (const code of codes) expect(code).toMatch(new RegExp(`^[${NET.ROOM_CODE_ALPHABET}]{${NET.ROOM_CODE_LENGTH}}$`));
+    } finally {
+      stuck.mockRestore();
+    }
+  });
+
+  it('spread over the whole alphabet', () => {
+    const lobby = makeLobby(300);
+    const seen = new Set<string>();
+    for (let i = 0; i < 300; i++) for (const ch of ok(lobby.createPrivate(newPlayer())).room.code) seen.add(ch);
+    expect(seen.size).toBeGreaterThan(NET.ROOM_CODE_ALPHABET.length - 3);
+  });
+});
+
 describe('Lobby quick play', () => {
   it('puts players into the same public room until it is full, then opens another', () => {
     const lobby = makeLobby();

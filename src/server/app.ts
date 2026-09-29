@@ -37,6 +37,9 @@ export interface ServerStats {
   connections: number;
   tickMsP99: number;
   uptimeSec: number;
+  /** Memory of the server process, in megabytes: resident set and JavaScript heap. */
+  rssMb: number;
+  heapMb: number;
 }
 
 export interface GameServer {
@@ -106,6 +109,8 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
       connections,
       tickMsP99: Math.round(p99 * 1000) / 1000,
       uptimeSec: Math.round((Date.now() - startedAt) / 1000),
+      rssMb: Math.round(process.memoryUsage().rss / 104857.6) / 10,
+      heapMb: Math.round(process.memoryUsage().heapUsed / 104857.6) / 10,
     };
   };
 

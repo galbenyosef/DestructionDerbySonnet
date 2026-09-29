@@ -215,6 +215,9 @@ describe('http endpoints', () => {
     const health = (await (await fetch(`http://127.0.0.1:${port}/healthz`)).json()) as Record<string, unknown>;
     expect(health).toMatchObject({ ok: true, rooms: 1, players: 1, connections: 1 });
     expect(typeof health.tickMsP99).toBe('number');
+    expect(health.rssMb as number).toBeGreaterThan(20); // the process's memory, for the load test and for monitoring
+    expect(health.heapMb as number).toBeGreaterThan(1);
+    expect(health.heapMb as number).toBeLessThan(health.rssMb as number);
     const missing = await fetch(`http://127.0.0.1:${port}/nope`);
     expect(missing.status).toBe(404);
   });

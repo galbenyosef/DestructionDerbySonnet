@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { NET } from '../shared/constants';
 import type { ErrorCode } from '../shared/protocol';
 import type { Player } from './player';
@@ -7,7 +8,7 @@ export type JoinResult = { ok: true; room: Room; slot: number } | { ok: false; c
 
 export interface LobbyOptions {
   maxRooms: number;
-  /** Injectable for tests; defaults to Math.random (server-only, never used by the simulation). */
+  /** A number in [0, 1) that picks the letters of a room code. Injectable for tests; the default is cryptographically random, so codes cannot be predicted. */
   random?: () => number;
   /** Round timing, bot count and bot seed for every room. */
   room?: RoomOptions;
@@ -18,7 +19,7 @@ export class Lobby {
   private readonly random: () => number;
 
   constructor(private readonly options: LobbyOptions) {
-    this.random = options.random ?? Math.random;
+    this.random = options.random ?? (() => randomInt(0x1_0000_0000) / 0x1_0000_0000);
   }
 
   get roomCount(): number {

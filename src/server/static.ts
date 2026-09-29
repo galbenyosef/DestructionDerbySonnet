@@ -45,9 +45,15 @@ export function createStaticHandler(rootDir: string): (req: http.IncomingMessage
       res.end('forbidden');
       return true;
     }
+    // what the request really names, relative to the root: decided after the path was resolved, not from the raw text
+    const inside = path.relative(root, file).split(path.sep);
+    if (inside.some((segment) => segment.startsWith('.'))) return false; // dotfiles (.env, .git) are never served
     let stat: fs.Stats;
     try {
-      stat = fs.statSync(file);
+      const real = fs.realpathSync(file);
+      const realRoot = fs.realpathSync(root);
+      if (real !== realRoot && !real.startsWith(realRoot + path.sep)) return false; // a symlink that leads out of the root
+      stat = fs.statSync(real);
     } catch {
       return false;
     }
@@ -56,7 +62,7 @@ export function createStaticHandler(rootDir: string): (req: http.IncomingMessage
       'content-type': TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream',
       'content-length': String(stat.size),
       'x-content-type-options': 'nosniff',
-      'cache-control': rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+      'cache-control': inside[0] === 'assets' ? 'public, max-age=31536000, immutable' : 'no-cache',
     });
     if (req.method === 'HEAD') {
       res.end();
