@@ -46,7 +46,7 @@ export class NetStats {
   private totals = { resets: 0, deadband: 0, dropped: 0, snaps: 0, stalled: 0 };
 
   constructor(
-    private readonly mySlot: number,
+    public mySlot: number,
     private readonly capacity = 300,
   ) {}
 

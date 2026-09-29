@@ -1,5 +1,5 @@
 import { ARENA } from '../../shared/constants';
-import { NEUTRAL_INPUT, quantizeInput, type CarInput } from '../../shared/input';
+import { NEUTRAL_INPUT, PARKED_INPUT, quantizeInput, type CarInput } from '../../shared/input';
 import { quatConjugate, quatMul, quatNormalize, vadd, vlen, vsub } from '../../shared/math';
 import { SNAP_FLAG_ALIVE, SNAP_FLAG_HANDBRAKE, type Snapshot, type SnapshotCar } from '../../shared/protocol';
 import { Simulation } from '../../shared/sim';
@@ -116,6 +116,7 @@ export class Predictor {
   private sim: Simulation | null = null;
   private epoch: number | null = null;
   private synced = false;
+  private live = true;
   private stalled = false;
   private lastBehind: number | null = null;
   private lastAck: number | null = null;
@@ -150,7 +151,8 @@ export class Predictor {
   };
 
   constructor(
-    readonly mySlot: number,
+    /** The slot of the local car in the current world (-1: none, the player is watching). Changes with every round. */
+    public mySlot: number,
     options: PredictorOptions = {},
   ) {
     this.deadbandPos = options.deadbandPos ?? DEFAULTS.deadbandPos;
@@ -184,11 +186,22 @@ export class Predictor {
     return this.sim !== null && this.sim.slots.includes(this.mySlot);
   }
 
+  /** False while the server ignores the driver's input (countdown, results): the local car is then held still like the server's. */
+  setLive(live: boolean): void {
+    this.live = live;
+  }
+
+  get isLive(): boolean {
+    return this.live;
+  }
+
   /**
-   * Starts accepting snapshots for a new world. The world itself is built from the first snapshot (it lists exactly
-   * the cars the server simulates). Inputs not yet acknowledged are kept so they can be replayed.
+   * Starts accepting snapshots for a new world, in which the local car has slot `mySlot` (default: unchanged, -1 = none).
+   * The world itself is built from the first snapshot (it lists exactly the cars the server simulates). Inputs not yet
+   * acknowledged are kept so they can be replayed, and the input numbering carries on.
    */
-  beginWorld(epoch: number): void {
+  beginWorld(epoch: number, mySlot: number = this.mySlot): void {
+    this.mySlot = mySlot;
     this.epoch = epoch & 0xff;
     if (this.sim) this.counters.worldRebuilds++;
     this.disposeSim();
@@ -365,9 +378,15 @@ export class Predictor {
     this.meta.clear();
   }
 
+  /** What the server does with the driver's input: nothing while the round is not live or once the car is wrecked. */
+  private appliedLocal(input: CarInput): CarInput {
+    const alive = ((this.meta.get(this.mySlot)?.flags ?? SNAP_FLAG_ALIVE) & SNAP_FLAG_ALIVE) !== 0;
+    return this.live && alive ? input : PARKED_INPUT;
+  }
+
   private simulate(localInput: CarInput): void {
     const sim = this.sim!;
-    if (sim.slots.includes(this.mySlot)) sim.setInput(this.mySlot, localInput);
+    if (sim.slots.includes(this.mySlot)) sim.setInput(this.mySlot, this.appliedLocal(localInput));
     for (const [slot, input] of this.remoteInputs) if (sim.slots.includes(slot)) sim.setInput(slot, input);
     sim.step();
     this.prev = this.curr;

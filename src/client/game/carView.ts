@@ -10,6 +10,8 @@ import { wheelLocalPosition } from '../../shared/vehicle';
  */
 export const WHEEL_SPIN_SIGN = -1;
 const REST_SUSPENSION = 0.374; // measured settled suspension length
+/** Body colour of a car that is out of the round. */
+export const WRECK_COLOR = 0x2a2b2e;
 
 export class CarView {
   readonly group = new THREE.Group();
@@ -18,8 +20,11 @@ export class CarView {
   private readonly spinners: THREE.Group[] = [];
   private readonly spin = [0, 0, 0, 0];
   private readonly disposables: Array<{ dispose(): void }> = [];
+  private paint: number;
+  private wrecked = false;
 
   constructor(color: number) {
+    this.paint = color;
     this.bodyMaterial = this.track(
       new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.25, flatShading: true }),
     );
@@ -104,7 +109,15 @@ export class CarView {
   }
 
   setColor(color: number): void {
-    this.bodyMaterial.color.setHex(color);
+    this.paint = color;
+    if (!this.wrecked) this.bodyMaterial.color.setHex(color);
+  }
+
+  /** A wreck is charred; it gets its paint back when the next round starts. */
+  setWreck(wrecked: boolean): void {
+    if (wrecked === this.wrecked) return;
+    this.wrecked = wrecked;
+    this.bodyMaterial.color.setHex(wrecked ? WRECK_COLOR : this.paint);
   }
 
   dispose(): void {

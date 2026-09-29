@@ -130,7 +130,7 @@ export class GameClient {
         this.joined = true;
         this.epoch = m.epoch;
         this.roster = m.players;
-        this.session.onWelcome(m.you, m.epoch);
+        this.session.onWelcome(m.you, m.epoch, m.phase?.phase ?? null);
         this.applyRoster();
         this.opts.hud.setRoom(m.room.code, m.room.public);
         this.opts.hud.setPlayers(this.roster, this.mySlot);
@@ -138,9 +138,14 @@ export class GameClient {
       case 'roster':
         this.epoch = m.epoch;
         this.roster = m.players;
-        this.session.onRoster(m.epoch); // a new world: drop everything buffered or predicted
+        this.mySlot = m.you; // slots are per round
+        this.session.onRoster(m.epoch, m.you); // a new world: drop everything buffered or predicted
+        this.chase.reset(); // and start the camera at the new spawn
         this.applyRoster();
         this.opts.hud.setPlayers(this.roster, this.mySlot);
+        break;
+      case 'phase':
+        this.session.onPhase(m.phase);
         break;
       case 'error':
         if (this.joined) this.opts.hud.showNotice(m.message);
@@ -226,14 +231,17 @@ export class GameClient {
       seen.add(p.slot);
       view.group.visible = true;
       view.setPose(p.pos, p.quat);
+      view.setWreck(!p.alive);
       const vf = vdot(p.linvel, quatRotate(p.quat, CAR_FORWARD));
       view.animateWheels(vf, steeringAngle(p.steer, vf), dt);
     }
     for (const [slot, view] of this.views) if (!seen.has(slot)) view.group.visible = false;
 
-    const me = poses.find((p) => p.slot === this.mySlot && p.visible);
-    if (me) {
-      this.chase.update(this.opts.gs.camera, { pos: me.pos, quat: me.quat, speed: vlen(me.linvel) }, dt);
+    // follow your own car; when it is a wreck, or you have no car this round, follow the first car still running
+    const mine = poses.find((p) => p.slot === this.mySlot && p.visible);
+    const watched = mine?.alive ? mine : (poses.find((p) => p.visible && p.alive && p.slot !== this.mySlot) ?? mine);
+    if (watched) {
+      this.chase.update(this.opts.gs.camera, { pos: watched.pos, quat: watched.quat, speed: vlen(watched.linvel) }, dt);
     }
     this.opts.gs.resize();
     this.opts.gs.render();
@@ -264,6 +272,7 @@ export class GameClient {
     const predicted = this.session.predicted;
     return {
       mode: this.session.mode,
+      phase: this.session.phase,
       mySlot: this.mySlot,
       roomCode: this.roomCode,
       epoch: this.epoch,
@@ -292,6 +301,8 @@ export class GameClient {
         speed: vlen(p.linvel),
         extrapolated: p.extrapolated,
         visible: p.visible,
+        alive: p.alive,
+        hp: p.hp,
       })),
     };
   }

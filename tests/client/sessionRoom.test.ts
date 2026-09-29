@@ -55,7 +55,8 @@ describe('a client that gives up prediction in the middle of a game', () => {
         const frame = socket.sent[read++]!;
         if (typeof frame === 'string') {
           const msg = JSON.parse(frame) as { t: string; epoch?: number };
-          if (msg.t === 'roster') session.onRoster(msg.epoch!);
+          if (msg.t === 'roster') session.onRoster(msg.epoch!, (msg as { you?: number }).you ?? -1);
+          else if (msg.t === 'phase') session.onPhase((msg as { phase?: 'countdown' | 'live' | 'results' }).phase!);
         } else {
           const snapshot = decodeSnapshot(frame);
           if (snapshot) session.onSnapshot(snapshot, k * (1000 / 60));

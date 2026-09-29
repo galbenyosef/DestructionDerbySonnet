@@ -1,6 +1,7 @@
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { initPhysics } from '../../src/shared/physics';
 import type { CarInput } from '../../src/shared/input';
+import { PredictedWorld } from '../../src/client/net/predictedWorld';
 import { Loopback, percentile } from '../helpers/loopback';
 
 beforeAll(async () => {
@@ -146,5 +147,26 @@ describe('PredictedWorld: what the player would see', () => {
     expect(s.localErrorP95).toBeLessThan(0.05);
     expect(s.deadbandHitRate).toBeGreaterThan(0.7);
     expect(s.resimStepsAvg).toBeGreaterThan(3);
+  });
+
+  it('follows the local slot from world to world, statistics included', () => {
+    const world = new PredictedWorld(-1);
+    world.beginWorld(1, 2);
+    expect(world.mySlot).toBe(2);
+    expect(world.stats.mySlot).toBe(2);
+    world.beginWorld(2); // no slot given: unchanged
+    expect(world.mySlot).toBe(2);
+    world.dispose();
+  });
+
+  it('does not run ahead of the server during the countdown, when the server ignores the driver', () => {
+    const l = loopback({ rules: { countdownTicks: 180 }, rttMs: 60, local: straight, remote: gentle });
+    l.run(2.5);
+    expect(l.results.filter((r) => r.outcome === 'applied').length).toBeGreaterThan(50);
+    expect(Math.max(...l.localErrors())).toBeLessThan(0.05);
+    l.run(4); // and once the round is live the car really drives, in step with the server
+    const sim = l.serverSim!;
+    expect(Math.hypot(sim.getState(0).linvel.x, sim.getState(0).linvel.z)).toBeGreaterThan(8);
+    expect(percentile(l.localErrors(), 0.95)).toBeLessThan(0.03);
   });
 });

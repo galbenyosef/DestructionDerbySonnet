@@ -37,7 +37,7 @@ export class PredictedWorld {
   private readonly smoothing: boolean;
 
   constructor(
-    readonly mySlot: number,
+    mySlot: number,
     options: PredictedWorldOptions = {},
   ) {
     this.predictor = new Predictor(mySlot, options.predictor);
@@ -46,15 +46,26 @@ export class PredictedWorld {
     this.smoothing = options.smoothing ?? true;
   }
 
+  /** Slot of the local car in the current world (-1: watching). */
+  get mySlot(): number {
+    return this.predictor.mySlot;
+  }
+
   /** Non-null when prediction cannot run at all (see Predictor.failure); the caller should fall back to interpolation. */
   get failure(): string | null {
     return this.predictor.failure;
   }
 
-  /** A new world (welcome or roster message): forget predictions and pending corrections. */
-  beginWorld(epoch: number): void {
-    this.predictor.beginWorld(epoch);
+  /** A new world (welcome or roster message), in which the local car has slot `mySlot`: forget predictions and pending corrections. */
+  beginWorld(epoch: number, mySlot: number = this.mySlot): void {
+    this.predictor.beginWorld(epoch, mySlot);
+    this.stats.mySlot = mySlot;
     this.smoother.clear();
+  }
+
+  /** Whether the server is applying the driver's input (false in the countdown and the results). */
+  setLive(live: boolean): void {
+    this.predictor.setLive(live);
   }
 
   /** One local 60 Hz tick. Returns the input's sequence number, to send to the server with the same input. */

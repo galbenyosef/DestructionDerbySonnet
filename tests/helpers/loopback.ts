@@ -11,7 +11,7 @@ import { FakeSocket } from './fakeSocket';
 
 export const TICK_MS = 1000 / 60;
 
-type Down = { kind: 'snapshot'; snapshot: Snapshot } | { kind: 'roster'; epoch: number };
+type Down = { kind: 'snapshot'; snapshot: Snapshot } | { kind: 'roster'; epoch: number; you: number } | { kind: 'phase'; live: boolean };
 type Up = { seq: number; input: CarInput };
 
 export interface LoopbackOptions {
@@ -109,15 +109,19 @@ export class Loopback {
     while (this.sentIndex < frames.length) {
       const frame = frames[this.sentIndex++]!;
       if (typeof frame === 'string') {
-        const msg = JSON.parse(frame) as { t: string; epoch?: number };
-        if (msg.t === 'roster') this.down.push(now, { kind: 'roster', epoch: msg.epoch! });
+        const msg = JSON.parse(frame) as { t: string; epoch?: number; you?: number; phase?: string };
+        if (msg.t === 'roster') this.down.push(now, { kind: 'roster', epoch: msg.epoch!, you: msg.you! });
+        else if (msg.t === 'phase') this.down.push(now, { kind: 'phase', live: msg.phase === 'live' });
       } else {
         const snapshot = decodeSnapshot(frame);
         if (snapshot) this.down.push(now, { kind: 'snapshot', snapshot }, true);
       }
     }
     for (const d of this.down.due(now)) {
-      if (d.kind === 'roster') this.world.beginWorld(d.epoch);
+      if (d.kind === 'roster') {
+        this.world.beginWorld(d.epoch, d.you);
+        this.world.setLive(false);
+      } else if (d.kind === 'phase') this.world.setLive(d.live);
       else this.results.push(this.world.onSnapshot(d.snapshot, now));
     }
     this.remoteSeq++;

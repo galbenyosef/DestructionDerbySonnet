@@ -276,3 +276,71 @@ describe('Predictor snapshot handling', () => {
     p.dispose();
   });
 });
+
+describe('Predictor while the server holds the car still', () => {
+  const travelled = (p: Predictor, slot: number, from: { x: number; z: number }): number => {
+    const pos = p.poses(1).find((x) => x.slot === slot)!.state.pos;
+    return Math.hypot(pos.x - from.x, pos.z - from.z);
+  };
+
+  it('parks the local car while the round is not live, and lets it drive once it is', () => {
+    const p = new Predictor(0);
+    const w = world([0, 1]);
+    p.beginWorld(3);
+    p.reconcile(snapshotOf(w, { tick: 2 }));
+    p.setLive(false);
+    const start = p.poses(1).find((x) => x.slot === 0)!.state.pos;
+    for (let i = 0; i < 120; i++) p.step(straight());
+    expect(travelled(p, 0, start)).toBeLessThan(0.3); // settled on its suspension, nothing more
+    p.setLive(true);
+    for (let i = 0; i < 120; i++) p.step(straight());
+    expect(travelled(p, 0, start)).toBeGreaterThan(5);
+    p.dispose();
+  });
+
+  it('parks the local car once the server says it is out of the round', () => {
+    const p = new Predictor(0);
+    const w = world([0, 1]);
+    p.beginWorld(3);
+    p.reconcile(snapshotOf(w, { tick: 2 }));
+    const wrecked = snapshotOf(w, { tick: 4 });
+    wrecked.cars[0]!.flags = 0; // no SNAP_FLAG_ALIVE
+    wrecked.cars[0]!.hp = 0;
+    p.reconcile(wrecked);
+    const start = p.poses(1).find((x) => x.slot === 0)!.state.pos;
+    for (let i = 0; i < 120; i++) p.step(straight());
+    expect(travelled(p, 0, start)).toBeLessThan(0.3);
+    p.dispose();
+  });
+
+  it('holds the car still when the replay covers inputs sent during a countdown', () => {
+    const p = new Predictor(0);
+    const w = world([0, 1]);
+    p.beginWorld(3);
+    p.setLive(false);
+    for (let i = 0; i < 10; i++) p.step(straight()); // pressed while the server was holding the cars
+    p.reconcile(snapshotOf(w, { tick: 2, ackSeq: 0 }));
+    const start = p.poses(1).find((x) => x.slot === 0)!.state.pos;
+    expect(travelled(p, 0, start)).toBeLessThan(0.3); // the ten replayed inputs did not drive it
+    p.dispose();
+  });
+
+  it('takes a new local slot with each world and keeps numbering inputs', () => {
+    const p = new Predictor(-1);
+    const w = world([0, 1, 2]);
+    p.beginWorld(3);
+    expect(p.step(straight())).toBe(1);
+    p.beginWorld(4, 2); // a new round: the player now drives slot 2
+    expect(p.mySlot).toBe(2);
+    expect(p.sequence).toBe(1);
+    p.reconcile(snapshotOf(w, { epoch: 4, tick: 2, ackSeq: 1 }));
+    expect(p.hasLocalCar).toBe(true);
+    expect(p.step(straight())).toBe(2);
+    p.beginWorld(5); // no slot given: unchanged
+    expect(p.mySlot).toBe(2);
+    p.beginWorld(6, -1); // watching
+    p.reconcile(snapshotOf(w, { epoch: 6, tick: 2, ackSeq: 2 }));
+    expect(p.hasLocalCar).toBe(false);
+    p.dispose();
+  });
+});

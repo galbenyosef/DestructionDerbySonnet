@@ -1,5 +1,5 @@
 import type { CarInput } from '../../shared/input';
-import type { Snapshot } from '../../shared/protocol';
+import { SNAP_FLAG_ALIVE, type Phase, type Snapshot } from '../../shared/protocol';
 import type { Quat, Vec3 } from '../../shared/types';
 import { SnapshotInterpolator } from './interp';
 import { PredictedWorld, type PredictedWorldOptions } from './predictedWorld';
@@ -15,6 +15,9 @@ export interface DrawPose {
   steer: number;
   visible: boolean;
   extrapolated: boolean;
+  /** False for a wreck. */
+  alive: boolean;
+  hp: number;
 }
 
 export interface ClientSessionOptions {
@@ -38,6 +41,7 @@ export class ClientSession {
   private seq = 0;
   private received = 0;
   private wasStalled = false;
+  private currentPhase: Phase | null = null;
 
   constructor(
     mode: NetMode,
@@ -65,27 +69,42 @@ export class ClientSession {
     return this.world ? this.world.predictor.sequence : this.seq;
   }
 
+  /** Where the round is (countdown, live, results), as far as the server has told us. */
+  get phase(): Phase | null {
+    return this.currentPhase;
+  }
+
   /** True while the server is not acknowledging our inputs (dead or badly delayed uplink). */
   get stalled(): boolean {
     return this.world?.predictor.isStalled ?? false;
   }
 
-  onWelcome(slot: number, epoch: number): void {
+  /** `slot` is the local car's slot in the running round, or -1 while the player is watching. */
+  onWelcome(slot: number, epoch: number, phase: Phase | null = null): void {
     this.epoch = epoch;
+    this.currentPhase = phase;
     this.interpolator.reset(epoch);
     if (this.current === 'predict') {
       this.world?.dispose();
       this.world = new PredictedWorld(slot, this.options.world);
       this.world.beginWorld(epoch);
+      this.world.setLive(phase === 'live');
     }
   }
 
-  /** A new world (roster change): every buffered or predicted state belongs to the old one. */
-  onRoster(epoch: number): void {
+  /** A new round's world: every buffered or predicted state belongs to the old one, and the local car may have a new slot. */
+  onRoster(epoch: number, you: number): void {
     this.epoch = epoch;
     this.wasStalled = false;
+    this.currentPhase = 'countdown'; // a roster always opens with the countdown; the phase message repeats it
     this.interpolator.reset(epoch);
-    this.world?.beginWorld(epoch);
+    this.world?.beginWorld(epoch, you);
+    this.world?.setLive(false);
+  }
+
+  onPhase(phase: Phase): void {
+    this.currentPhase = phase;
+    this.world?.setLive(phase === 'live');
   }
 
   /** One local 60 Hz tick: returns the sequence number to send with `input`. */
@@ -122,6 +141,8 @@ export class ClientSession {
         steer: p.steer,
         visible: p.visible,
         extrapolated: false,
+        alive: (p.flags & SNAP_FLAG_ALIVE) !== 0,
+        hp: p.hp,
       }));
     }
     return this.interpolator.sample(nowMs).map((p) => ({
@@ -132,6 +153,8 @@ export class ClientSession {
       steer: p.steer,
       visible: true,
       extrapolated: p.extrapolated,
+      alive: (p.flags & SNAP_FLAG_ALIVE) !== 0,
+      hp: p.hp,
     }));
   }
 
