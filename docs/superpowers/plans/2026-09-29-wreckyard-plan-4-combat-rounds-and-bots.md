@@ -647,7 +647,7 @@ with:
     });
 ```
 
-Add this method directly above `getWheels`:  replace the line
+Add this method directly above `getWheels`, by replacing the line
 
 <!-- op {"kind": "edit", "path": "src/shared/sim.ts"} -->
 ```ts
@@ -2413,10 +2413,10 @@ Expected: PASS — 13 bot tests plus the unchanged latency tests (26 in all); ty
 
 ```bash
 git add -A
-git commit -m "feat(server): BotBrain drives server-side bots \u2014 chase, keep off the wall, back out when stuck"
+git commit -m "feat(server): BotBrain drives server-side bots — chase, keep off the wall, back out when stuck"
 ```
 
-<!-- commit "feat(server): BotBrain drives server-side bots \u2014 chase, keep off the wall, back out when stuck" -->
+<!-- commit "feat(server): BotBrain drives server-side bots — chase, keep off the wall, back out when stuck" -->
 
 ---
 
@@ -4043,10 +4043,10 @@ Expected: PASS — the server tests, the loopback and session-room tests against
 
 ```bash
 git add -A
-git commit -m "feat(server): rooms play in rounds \u2014 countdown, live, results \u2014 with bots, spectators and a new world every round"
+git commit -m "feat(server): rooms play in rounds — countdown, live, results — with bots, spectators and a new world every round"
 ```
 
-<!-- commit "feat(server): rooms play in rounds \u2014 countdown, live, results \u2014 with bots, spectators and a new world every round" -->
+<!-- commit "feat(server): rooms play in rounds — countdown, live, results — with bots, spectators and a new world every round" -->
 
 ---
 
@@ -5201,10 +5201,10 @@ Expected: PASS — the client tests, the type-check, then the whole suite (377 t
 
 ```bash
 git add -A
-git commit -m "feat(client): follow rounds \u2014 local slot from the roster, the car held while the server holds it, wrecks drawn charred"
+git commit -m "feat(client): follow rounds — local slot from the roster, the car held while the server holds it, wrecks drawn charred"
 ```
 
-<!-- commit "feat(client): follow rounds \u2014 local slot from the roster, the car held while the server holds it, wrecks drawn charred" -->
+<!-- commit "feat(client): follow rounds — local slot from the roster, the car held while the server holds it, wrecks drawn charred" -->
 
 ---
 
@@ -5866,10 +5866,10 @@ A test suite that cannot fail proves nothing. Make each of these one-line change
 
 ```bash
 git add -A
-git commit -m "feat(server): combat \u2014 impacts cost HP, cars are eliminated, kills and damage score, rounds end by elimination"
+git commit -m "feat(server): combat — impacts cost HP, cars are eliminated, kills and damage score, rounds end by elimination"
 ```
 
-<!-- commit "feat(server): combat \u2014 impacts cost HP, cars are eliminated, kills and damage score, rounds end by elimination" -->
+<!-- commit "feat(server): combat — impacts cost HP, cars are eliminated, kills and damage score, rounds end by elimination" -->
 
 ---
 
@@ -6218,3 +6218,18 @@ git commit -m "feat(server): settings from the environment, whole-round tests ov
 **Known limits of this baseline (each addressed by a later plan):** there is no match screen — no health bar, timer, scoreboard, kill feed or banners — and no spectator controls (Plan 5); wrecks are dark boxes without smoke or debris and nothing dents (Plan 6); a player who joins while a round is live watches until it ends, as the spec says; the damage numbers, wall damage and the bots have not been played by a human; a wreck coasts for several seconds on its handbrake before it stops.
 
 **Next plans** (written after this one is verified, against the code as it then stands): Plan 5 — the match screen (health bar and damage diagram, timer, alive count, scoreboard, kill feed, countdown and winner banners, spectator camera); Plan 6 — destruction and juice (dents, parts, particles, skid marks, camera shake, bloom, audio, arena dressing); Plan 7 — polish and packaging (menu and settings, graphics presets, limits, CLAUDE.md, Dockerfile, load test).
+
+---
+
+## Changes made after the final review
+
+The whole-branch review (a fresh reviewer, no Critical finding) found four Important problems in the damage model and its edges; a fifth was found while preparing the match screen. Each was fixed test-first in one pass, in the commits after `e48505d`; the suite went from 406 to 422 tests.
+
+- **Cars pushing in a line were priced as a stream of hits.** A parked, handbraked car pinned against the wall by two pushers lost 450 HP of damage in ten seconds and was named the pusher's killer (Task 30's model only measured one pushing pair). `HitTracker` now opens a hit only on a tick of at least `COMBAT.IMPACT_IMPULSE` (2000 N·s: every measured collision does in its first tick, a push train stays near 550) and lets lighter ticks join it only within `COMBAT.IMPACT_TAIL_TICKS` (6) of the last impact-sized tick. The spec addendum's other safeguard, capping a hit at the victim's velocity change, was not built: this rule alone closes the case.
+- **A wreck acted as an attacker.** Ramming one cost full car damage and the wreck kept earning points and kills. A hit whose attacker was already out when the impact began is priced like a wall hit and credited to nobody (`Hit.byWreck`; `hit.attacker` still names the slot so Plan 6 can dent the wreck). A car that goes out while its own blow is being paid out keeps the credit.
+- **A body Rapier turned to NaN froze every predicting client** (they drop such a snapshot whole). `RoundState.step` now replaces a non-finite body, alive or already a wreck, with a finite wreck at its spawn point in the same tick.
+- **`scripts/bot.ts` sent nothing while watching**, so a bot that joined a live round was dropped as inactive after 30 s. It now sends whenever it is connected, as the browser does.
+- **No final `scores` after `results`.** The board contradicted the results screen for eight seconds (win bonus and the last points missing). A `scores` message with the folded totals now follows `results` at once, bypassing the four-a-second throttle.
+
+What the reviewer noted for Plan 5 and that this plan's code already does: `hit.tick` is the tick the impact began (3 to 33 ticks before the message arrives) while `ko.tick` is the current tick, so a kill feed orders by arrival; `welcome.you` is always -1 and the slot comes with the next `roster`; a countdown restart re-sends `roster` with a new `epoch` and the same `round`; the anti-stall drain sends no message, only falling snapshot HP.
+
