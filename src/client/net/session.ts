@@ -21,6 +21,8 @@ export interface ClientSessionOptions {
   world?: PredictedWorldOptions;
   /** Called once when prediction gives up and the session switches to interpolation; `reason` is for the log. */
   onFallback?(reason: string): void;
+  /** Called each time the connection becomes stalled (the server stopped acknowledging our inputs), not while it stays so. */
+  onStall?(): void;
 }
 
 /**
@@ -35,6 +37,7 @@ export class ClientSession {
   private epoch = 0;
   private seq = 0;
   private received = 0;
+  private wasStalled = false;
 
   constructor(
     mode: NetMode,
@@ -80,6 +83,7 @@ export class ClientSession {
   /** A new world (roster change): every buffered or predicted state belongs to the old one. */
   onRoster(epoch: number): void {
     this.epoch = epoch;
+    this.wasStalled = false;
     this.interpolator.reset(epoch);
     this.world?.beginWorld(epoch);
   }
@@ -97,8 +101,14 @@ export class ClientSession {
       return;
     }
     const { outcome } = this.world.onSnapshot(snapshot, arrivalMs);
-    if (this.world.failure !== null) this.fallBack(this.world.failure, snapshot, arrivalMs);
-    else if (outcome === 'applied' || outcome === 'synced') this.received++;
+    if (this.world.failure !== null) {
+      this.fallBack(this.world.failure, snapshot, arrivalMs);
+      return;
+    }
+    if (outcome === 'applied' || outcome === 'synced') this.received++;
+    const stalled = this.world.predictor.isStalled;
+    if (stalled && !this.wasStalled) this.options.onStall?.();
+    this.wasStalled = stalled;
   }
 
   /** Poses to draw this frame. `alpha` is the fraction of the way to the next fixed step, `nowMs` the frame's clock. */

@@ -75,6 +75,42 @@ describe('ClientSession in prediction mode', () => {
   });
 });
 
+describe('ClientSession stall notice', () => {
+  it('reports the start of a stall once, and again after a recovery', () => {
+    let stalls = 0;
+    const session = new ClientSession('predict', { onStall: () => stalls++ });
+    const w = world([0, 1]);
+    session.onWelcome(0, 3);
+    session.onSnapshot(snapshotOf(w, { tick: 2 }), 100);
+    for (let i = 0; i < 300; i++) session.nextInput(straight());
+    session.onSnapshot(snapshotOf(w, { tick: 4, ackSeq: 0 }), 133); // 300 unacknowledged inputs: the server is not hearing us
+    session.onSnapshot(snapshotOf(w, { tick: 6, ackSeq: 0 }), 166); // still stalled: no second report
+    expect(stalls).toBe(1);
+    session.onSnapshot(snapshotOf(w, { tick: 8, ackSeq: 300 }), 200); // acknowledgements are back
+    expect(session.stalled).toBe(false);
+    for (let i = 0; i < 300; i++) session.nextInput(straight());
+    session.onSnapshot(snapshotOf(w, { tick: 10, ackSeq: 300 }), 233); // dead again
+    expect(stalls).toBe(2);
+    session.dispose();
+  });
+
+  it('reports a stall again when a new world starts out stalled', () => {
+    let stalls = 0;
+    const session = new ClientSession('predict', { onStall: () => stalls++ });
+    const w = world([0, 1]);
+    session.onWelcome(0, 3);
+    session.onSnapshot(snapshotOf(w, { tick: 2 }), 100);
+    for (let i = 0; i < 300; i++) session.nextInput(straight());
+    session.onSnapshot(snapshotOf(w, { tick: 4, ackSeq: 0 }), 133);
+    expect(stalls).toBe(1);
+    session.onRoster(4); // a rebuild while the uplink is still dead: the new world's very first snapshot is stalled too
+    session.onSnapshot(snapshotOf(w, { epoch: 4, tick: 2, ackSeq: 0 }), 250);
+    expect(session.stalled).toBe(true);
+    expect(stalls).toBe(2);
+    session.dispose();
+  });
+});
+
 describe('ClientSession in interpolation mode', () => {
   it('numbers inputs itself and draws interpolated snapshots', () => {
     const session = new ClientSession('interp');

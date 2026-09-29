@@ -64,6 +64,7 @@ export class GameClient {
         console.error('Prediction unavailable, falling back to interpolation:', reason);
         this.opts.hud.showNotice('Prediction unavailable — using interpolation.');
       },
+      onStall: () => this.opts.hud.showNotice('Connection unstable — the server is not receiving your controls.'),
     });
     this.timer.connect(document);
     const lag = opts.lag ?? null;
