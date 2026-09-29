@@ -78,7 +78,8 @@ ws.on('message', (data: RawData, isBinary: boolean) => {
 });
 
 setInterval(() => {
-  if (mySlot < 0 || ws.readyState !== WebSocket.OPEN) return;
+  // Keeps sending while it only watches (no car yet): the server ignores those inputs, but silence for 30 s gets a player dropped as inactive.
+  if (ws.readyState !== WebSocket.OPEN) return;
   const elapsed = (Date.now() - startedAt) / 1000;
   let throttle = 0.8;
   let steer = Math.sin(elapsed * 0.6) * 0.8;
