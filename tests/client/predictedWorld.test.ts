@@ -96,6 +96,27 @@ describe('PredictedWorld: what the player would see', () => {
     expect(l.maxVisualJump(1)).toBeLessThan(0.03);
   });
 
+  it('shows no pop when a snapshot lands between two simulation steps on a fast link', () => {
+    const l = loopback({ rttMs: 0, alpha: 0.5, clientFirst: true, local: straight, remote: gentle }); // localhost, drawn between steps (a 120 Hz display)
+    l.run(8);
+    expect(l.maxVisualJump(0)).toBeLessThan(0.02);
+    expect(l.maxVisualJump(1)).toBeLessThan(0.02);
+  });
+
+  it('does not throw the car around when the uplink dies but snapshots keep arriving', () => {
+    const l = loopback({ rttMs: 60, uplinkDeadAfterSeconds: 3, local: weave, remote: gentle });
+    const at = (): ReturnType<typeof l.world.stats.summary> => l.world.stats.summary(l.k * (1000 / 60));
+    l.run(3);
+    const snapsBefore = at().snapsTotal; // impacts with the wall can snap a car's orientation even on a healthy link
+    l.run(9);
+    expect(at().stallsTotal).toBeGreaterThan(0);
+    expect(at().snapsTotal - snapsBefore).toBeLessThanOrEqual(2); // one honest jump back to the server's state, not a stream of them
+    const applied = l.results.filter((r) => r.outcome === 'applied');
+    const afterwards = applied.slice(-150).map((r) => r.localError); // the last ~5 s, long after the uplink died
+    expect(Math.max(...afterwards)).toBeLessThan(0.6);
+    expect(l.maxVisualJump(0, 60 * 7)).toBeLessThan(0.3);
+  });
+
   it('is visibly smoother than drawing the raw prediction', () => {
     const smooth = loopback({ rttMs: 120, jitterMs: 25, local: weave, remote: weave, seed: 4 });
     const raw = loopback({ rttMs: 120, jitterMs: 25, local: weave, remote: weave, seed: 4, smoothing: false });

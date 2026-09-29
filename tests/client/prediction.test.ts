@@ -172,6 +172,87 @@ describe('Predictor snapshot handling', () => {
     p.dispose();
   });
 
+  it('keeps the interpolation base when a snapshot needs no replay, so a frame drawn between two steps does not pop', () => {
+    const p = new Predictor(0);
+    const w = world([0, 1]);
+    p.beginWorld(3);
+    p.reconcile(snapshotOf(w, { tick: 2 }));
+    for (let i = 0; i < 90; i++) p.step(straight()); // about 8 m/s: one step moves the car ~0.13 m
+    const midStep = () => p.poses(0.5).find((x) => x.slot === 0)!.state.pos;
+    const before = midStep();
+    const now = snapshotOf(w, { tick: 4, ackSeq: p.sequence }); // the server has consumed every input and agrees exactly
+    for (const c of now.cars) c.state = p.poses(1).find((x) => x.slot === c.slot)!.state;
+    expect(p.reconcile(now)).toMatchObject({ outcome: 'applied', resimSteps: 0 });
+    const after = midStep();
+    expect(Math.hypot(after.x - before.x, after.z - before.z)).toBeLessThan(0.01);
+    p.dispose();
+  });
+
+  it('treats a long run of unacknowledged inputs as a stall: shows the server state, replays nothing, resumes when acks return', () => {
+    const p = new Predictor(0);
+    const w = world([0, 1]);
+    p.beginWorld(3);
+    p.reconcile(snapshotOf(w, { tick: 2 }));
+    for (let i = 0; i < 300; i++) p.step(straight());
+    const stalled = p.reconcile(snapshotOf(w, { tick: 4, ackSeq: 0 }));
+    expect(stalled).toMatchObject({ outcome: 'applied', stalled: true, resimSteps: 0 });
+    expect(p.isStalled).toBe(true);
+    expect(p.counters.stalls).toBe(1);
+    const server = w.getState(0).pos;
+    const shown = () => p.poses(1).find((x) => x.slot === 0)!.state.pos;
+    expect(Math.hypot(shown().x - server.x, shown().z - server.z)).toBeLessThan(1e-6); // exactly the server's car, not a 300-step replay
+    for (let i = 0; i < 10; i++) p.step(straight()); // local steps do not run away while stalled
+    expect(Math.hypot(shown().x - server.x, shown().z - server.z)).toBeLessThan(1e-6);
+    const back = p.reconcile(snapshotOf(w, { tick: 6, ackSeq: p.sequence - 12 })); // acknowledgements return
+    expect(back).toMatchObject({ stalled: false, resimSteps: 12 });
+    expect(p.isStalled).toBe(false);
+    p.dispose();
+  });
+
+  it('detects a dead uplink from acknowledgements that stop while inputs keep flowing, and recovers when they return', () => {
+    const p = new Predictor(0);
+    const w = world([0, 1]);
+    p.beginWorld(3);
+    p.reconcile(snapshotOf(w, { tick: 2, ackSeq: 0 }));
+    let tick = 2;
+    for (let i = 0; i < 6; i++) {
+      p.step(straight());
+      p.step(straight());
+      tick += 2;
+      p.reconcile(snapshotOf(w, { tick, ackSeq: p.sequence - 6 })); // healthy: acknowledgements trail by 6 inputs
+    }
+    const frozenAck = p.sequence - 6;
+    const stalledAfter: boolean[] = [];
+    for (let i = 0; i < 20; i++) {
+      p.step(straight());
+      p.step(straight()); // two inputs per snapshot, none of them acknowledged any more
+      tick += 2;
+      stalledAfter.push(p.reconcile(snapshotOf(w, { tick, ackSeq: frozenAck })).stalled);
+    }
+    expect(stalledAfter.slice(0, 6).some(Boolean)).toBe(false); // a few snapshots of growth are not yet evidence
+    expect(stalledAfter[stalledAfter.length - 1]).toBe(true); // 46 pending and growing on every snapshot
+    expect(p.isStalled).toBe(true);
+    const steady = p.reconcile(snapshotOf(w, { tick: tick + 2, ackSeq: p.sequence - 6 })); // acknowledgements are back
+    expect(steady).toMatchObject({ stalled: false, resimSteps: 6 });
+    p.dispose();
+  });
+
+  it('does not mistake steady high latency for a stall', () => {
+    const p = new Predictor(0);
+    const w = world([0, 1]);
+    p.beginWorld(3);
+    p.reconcile(snapshotOf(w, { tick: 2, ackSeq: 0 }));
+    let seq = 0;
+    for (let i = 1; i <= 40; i++) {
+      p.step(straight());
+      p.step(straight());
+      seq += 2;
+      const r = p.reconcile(snapshotOf(w, { tick: 2 + 2 * i, ackSeq: Math.max(0, seq - 30) })); // a constant 30 pending inputs
+      expect(r.stalled).toBe(false);
+    }
+    p.dispose();
+  });
+
   it('keeps counting sequence numbers through the u32 wrap', () => {
     const p = new Predictor(0, { startSeq: 0xfffffffd });
     p.beginWorld(3);

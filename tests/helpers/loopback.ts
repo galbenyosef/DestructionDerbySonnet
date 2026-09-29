@@ -26,6 +26,15 @@ export interface LoopbackOptions {
   predictor?: PredictorOptions;
   /** Set false to record the raw, unsmoothed prediction. */
   smoothing?: boolean;
+  /** Fraction between two simulation steps at which every frame is drawn (default 1 = exactly on a step). */
+  alpha?: number;
+  /** From this many simulated seconds on, nothing the client sends reaches the server (snapshots keep arriving). */
+  uplinkDeadAfterSeconds?: number;
+  /**
+   * Steps the client before the server within each tick. On a zero-latency link the server then consumes the newest
+   * input immediately, so snapshots need no replay (the situation on localhost and fast LANs).
+   */
+  clientFirst?: boolean;
 }
 
 /**
@@ -76,9 +85,17 @@ export class Loopback {
     return this.serverSim!.getState(slot);
   }
 
+  private clientStep(now: number): void {
+    const input = quantizeInput(this.options.local(this.k));
+    const seq = this.world.step(input);
+    const dead = this.options.uplinkDeadAfterSeconds !== undefined && now >= this.options.uplinkDeadAfterSeconds * 1000;
+    if (!dead) this.up.push(now, { seq, input }, true);
+  }
+
   /** Advances the simulated clock by one 60 Hz tick. */
   tick(): void {
     const now = this.k * TICK_MS;
+    if (this.options.clientFirst) this.clientStep(now);
     for (const m of this.up.due(now)) this.local.pushInput(m.seq, m.input);
     for (const m of this.upRemote.due(now)) this.remote.pushInput(m.seq, m.input);
     this.room.step();
@@ -99,10 +116,8 @@ export class Loopback {
     }
     this.remoteSeq++;
     this.upRemote.push(now, { seq: this.remoteSeq, input: quantizeInput(this.options.remote(this.k)) });
-    const input = quantizeInput(this.options.local(this.k));
-    const seq = this.world.step(input);
-    this.up.push(now, { seq, input }, true);
-    this.frames.push(this.world.frame(1, 1 / 60));
+    if (!this.options.clientFirst) this.clientStep(now);
+    this.frames.push(this.world.frame(this.options.alpha ?? 1, 1 / 60));
     this.k++;
   }
 

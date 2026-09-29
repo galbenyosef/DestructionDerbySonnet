@@ -24,6 +24,8 @@ export interface NetStatsSummary {
   droppedTotal: number;
   /** Corrections too large to smooth, which snapped the car. */
   snapsTotal: number;
+  /** Snapshots that arrived while the server was not acknowledging our inputs (a dead or badly delayed uplink). */
+  stallsTotal: number;
 }
 
 const percentile = (values: readonly number[], q: number): number => {
@@ -41,7 +43,7 @@ export class NetStats {
   private remote: number[] = [];
   private replay: number[] = [];
   private replayMs: number[] = [];
-  private totals = { resets: 0, deadband: 0, dropped: 0, snaps: 0 };
+  private totals = { resets: 0, deadband: 0, dropped: 0, snaps: 0, stalled: 0 };
 
   constructor(
     private readonly mySlot: number,
@@ -60,6 +62,7 @@ export class NetStats {
     for (const c of result.corrections) if (c.slot !== this.mySlot) this.push(this.remote, c.error);
     this.push(this.replay, result.resimSteps);
     this.push(this.replayMs, resimMs);
+    if (result.stalled) this.totals.stalled++;
     if (result.resetLocal) this.totals.resets++;
     else this.totals.deadband++;
   }
@@ -90,6 +93,7 @@ export class NetStats {
       resimMsAvg: mean(this.replayMs),
       droppedTotal: this.totals.dropped,
       snapsTotal: this.totals.snaps,
+      stallsTotal: this.totals.stalled,
     };
   }
 
@@ -99,7 +103,7 @@ export class NetStats {
     this.remote = [];
     this.replay = [];
     this.replayMs = [];
-    this.totals = { resets: 0, deadband: 0, dropped: 0, snaps: 0 };
+    this.totals = { resets: 0, deadband: 0, dropped: 0, snaps: 0, stalled: 0 };
   }
 
   private push(list: number[], value: number): void {

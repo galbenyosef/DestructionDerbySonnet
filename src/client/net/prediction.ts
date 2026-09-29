@@ -1,6 +1,6 @@
 import { ARENA } from '../../shared/constants';
 import { NEUTRAL_INPUT, quantizeInput, type CarInput } from '../../shared/input';
-import { vlen, vsub } from '../../shared/math';
+import { quatConjugate, quatMul, quatNormalize, vadd, vlen, vsub } from '../../shared/math';
 import { SNAP_FLAG_ALIVE, SNAP_FLAG_HANDBRAKE, type Snapshot, type SnapshotCar } from '../../shared/protocol';
 import { Simulation } from '../../shared/sim';
 import type { CarState, Vec3 } from '../../shared/types';
@@ -15,6 +15,12 @@ export interface PredictorOptions {
   historySize?: number;
   /** Within this distance (m) of another car the deadband is off: the exact server state is used, since cars can collide. */
   interactionRange?: number;
+  /**
+   * More unacknowledged inputs than this means the server is not hearing us (a dead uplink) rather than that they are
+   * in flight: the local car then shows the server's state, coasting on neutral input like the server plays it, and nothing is
+   * replayed. Keep it above any `?lag` round trip.
+   */
+  stallTicks?: number;
   /** First sequence number is startSeq + 1 (tests use it to exercise the u32 wrap). */
   startSeq?: number;
   /** Builds the local world for the given slots; tests inject a failing one. Defaults to `new Simulation(slots)`. */
@@ -38,6 +44,8 @@ export interface ReconcileResult {
   resetLocal: boolean;
   /** Local inputs replayed on top of the server's state. */
   resimSteps: number;
+  /** True when so many inputs were unacknowledged that nothing was replayed (see `PredictorOptions.stallTicks`). */
+  stalled: boolean;
   corrections: Correction[];
   /** Metres the local car's present position moved (0 without a local car). */
   localError: number;
@@ -60,7 +68,14 @@ interface HistoryEntry {
   after: CarState | null;
 }
 
-const DEFAULTS = { deadbandPos: 0.05, deadbandVel: 0.2, historySize: 240, interactionRange: 10 };
+const DEFAULTS = { deadbandPos: 0.05, deadbandVel: 0.2, historySize: 240, interactionRange: 10, stallTicks: 180 };
+/**
+ * A dead uplink shows as the unacknowledged count growing on every snapshot — this many in a row, above the minimum —
+ * after acknowledgements had been arriving. (Before the very first acknowledgement the count also grows for one round
+ * trip on any connection, so that is not evidence of anything.)
+ */
+const STALL_STREAK = 8;
+const STALL_MIN_BEHIND = 24;
 
 const finiteVec = (v: Vec3): boolean => Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z);
 const finiteState = (s: CarState): boolean =>
@@ -77,6 +92,7 @@ const none = (outcome: ReconcileOutcome): ReconcileResult => ({
   outcome,
   resetLocal: false,
   resimSteps: 0,
+  stalled: false,
   corrections: [],
   localError: 0,
 });
@@ -95,10 +111,16 @@ export class Predictor {
   private readonly deadbandVel: number;
   private readonly historySize: number;
   private readonly interactionRange: number;
+  private readonly stallTicks: number;
   private readonly createSimulation: (slots: number[]) => Simulation;
   private sim: Simulation | null = null;
   private epoch: number | null = null;
   private synced = false;
+  private stalled = false;
+  private lastBehind: number | null = null;
+  private lastAck: number | null = null;
+  private ackSeen = false;
+  private growthStreak = 0;
   private seq: number;
   private lastTick = -1;
   /** Why the most recent snapshot was ignored (diagnostics for `window.__derby.debug()`). */
@@ -124,6 +146,7 @@ export class Predictor {
     deadbandHits: 0,
     resimSteps: 0,
     worldRebuilds: 0,
+    stalls: 0,
   };
 
   constructor(
@@ -134,6 +157,7 @@ export class Predictor {
     this.deadbandVel = options.deadbandVel ?? DEFAULTS.deadbandVel;
     this.historySize = Math.max(1, Math.floor(options.historySize ?? DEFAULTS.historySize));
     this.interactionRange = options.interactionRange ?? DEFAULTS.interactionRange;
+    this.stallTicks = Math.max(1, Math.floor(options.stallTicks ?? DEFAULTS.stallTicks));
     this.createSimulation = options.createSimulation ?? ((slots) => new Simulation(slots));
     this.seq = (options.startSeq ?? 0) >>> 0;
   }
@@ -145,6 +169,11 @@ export class Predictor {
 
   get isSynced(): boolean {
     return this.synced;
+  }
+
+  /** True while the server is not acknowledging our inputs (see `PredictorOptions.stallTicks`). */
+  get isStalled(): boolean {
+    return this.stalled;
   }
 
   get worldEpoch(): number | null {
@@ -164,6 +193,7 @@ export class Predictor {
     if (this.sim) this.counters.worldRebuilds++;
     this.disposeSim();
     this.synced = false;
+    this.stalled = false;
     this.lastTick = -1;
     this.remoteInputs.clear();
     this.meta.clear();
@@ -179,8 +209,9 @@ export class Predictor {
     this.history.set(this.seq, entry);
     this.history.delete((this.seq - this.historySize) >>> 0);
     if (this.sim && this.synced) {
-      this.simulate(q);
-      if (this.hasLocalCar) entry.after = this.curr.get(this.mySlot) ?? null;
+      // While stalled the server is not hearing us and plays neutral input for us, so predict exactly that.
+      this.simulate(this.stalled ? NEUTRAL_INPUT : q);
+      if (this.hasLocalCar && !this.stalled) entry.after = this.curr.get(this.mySlot) ?? null;
     }
     return this.seq;
   }
@@ -207,6 +238,15 @@ export class Predictor {
       return none('ignored');
     }
 
+    // Stalled: far too many inputs unacknowledged, or the count has grown on every one of the last few snapshots
+    // (acknowledgements have stopped while we keep sending). Replaying from the server's state would then drift wildly.
+    if (this.lastAck !== null && s.ackSeq !== this.lastAck) this.ackSeen = true;
+    this.lastAck = s.ackSeq;
+    if (this.lastBehind !== null && behind > this.lastBehind) this.growthStreak++;
+    else this.growthStreak = 0;
+    this.lastBehind = behind;
+    const stalled =
+      behind > this.stallTicks || (this.ackSeen && this.growthStreak >= STALL_STREAK && behind >= STALL_MIN_BEHIND);
     const inSnapshot = new Set(s.cars.map((c) => c.slot));
     let fresh = !this.synced;
     if (!this.sim || !s.cars.every((c) => this.sim!.slots.includes(c.slot))) {
@@ -244,7 +284,7 @@ export class Predictor {
     // 1. put every car back to the server's state at the tick that consumed input `ackSeq`
     const mine = s.cars.find((c) => c.slot === this.mySlot);
     const crowded = mine !== undefined && s.cars.some((c) => c.slot !== this.mySlot && distance(c.state.pos, mine.state.pos) < this.interactionRange);
-    const kept = !fresh && hasLocal && !crowded ? this.history.get(s.ackSeq)?.after ?? null : null;
+    const kept = !fresh && hasLocal && !crowded && !stalled ? this.history.get(s.ackSeq)?.after ?? null : null;
     let keptLocal = false;
     for (const c of s.cars) {
       let state = c.state;
@@ -261,16 +301,22 @@ export class Predictor {
     }
     for (const slot of sim.slots) if (!inSnapshot.has(slot) && slot !== this.mySlot) this.remoteInputs.set(slot, NEUTRAL_INPUT);
     this.present = inSnapshot;
+    const priorPrev = this.prev;
     this.curr = this.readAll();
     this.prev = this.curr;
 
     // 2. replay the inputs the server has not consumed yet
-    const steps = Math.min(behind, this.historySize);
+    const steps = stalled ? 0 : Math.min(behind, this.historySize);
+    this.stalled = stalled;
+    if (stalled) this.counters.stalls++;
     for (let i = 0; i < steps; i++) {
       const entry = this.history.get((this.seq - steps + 1 + i) >>> 0);
       this.simulate(entry?.input ?? NEUTRAL_INPUT);
       if (entry && hasLocal) entry.after = this.curr.get(this.mySlot) ?? null;
     }
+    // Nothing replayed: the rewind collapsed the interpolation base (prev === curr) and a frame drawn between two steps
+    // would pop forward by up to one step of motion. Move the old base by the same correction as the present instead.
+    if (!fresh && steps === 0) this.prev = this.shiftBase(priorPrev, beforeMap, this.curr);
 
     const corrections: Correction[] = [];
     if (!fresh) {
@@ -288,7 +334,7 @@ export class Predictor {
       if (keptLocal) this.counters.deadbandHits++;
     }
     this.counters.resimSteps += steps;
-    return { outcome: fresh ? 'synced' : 'applied', resetLocal, resimSteps: steps, corrections, localError: local?.error ?? 0 };
+    return { outcome: fresh ? 'synced' : 'applied', resetLocal, resimSteps: steps, stalled, corrections, localError: local?.error ?? 0 };
   }
 
   /** Poses to draw, interpolated between the last two simulation steps by `alpha` in [0, 1]. Empty until synced. */
@@ -326,6 +372,30 @@ export class Predictor {
     sim.step();
     this.prev = this.curr;
     this.curr = this.readAll();
+  }
+
+  /** The previous step's states moved by the same correction as the present ones, so interpolation stays continuous. */
+  private shiftBase(
+    oldPrev: Map<number, CarState>,
+    oldCurr: Map<number, CarState>,
+    newCurr: Map<number, CarState>,
+  ): Map<number, CarState> {
+    const out = new Map<number, CarState>();
+    for (const [slot, nc] of newCurr) {
+      const op = oldPrev.get(slot);
+      const oc = oldCurr.get(slot);
+      if (!op || !oc) {
+        out.set(slot, nc);
+        continue;
+      }
+      out.set(slot, {
+        pos: vadd(op.pos, vsub(nc.pos, oc.pos)),
+        quat: quatNormalize(quatMul(nc.quat, quatMul(quatConjugate(oc.quat), op.quat))),
+        linvel: nc.linvel,
+        angvel: nc.angvel,
+      });
+    }
+    return out;
   }
 
   private readAll(): Map<number, CarState> {

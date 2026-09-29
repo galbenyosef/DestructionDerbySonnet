@@ -7,6 +7,7 @@ const applied = (localError: number, over: Partial<ReconcileResult> = {}, remote
   outcome: 'applied',
   resetLocal: false,
   resimSteps: 6,
+  stalled: false,
   localError,
   corrections: [
     { slot: 0, before: state, after: state, error: localError },
@@ -14,7 +15,7 @@ const applied = (localError: number, over: Partial<ReconcileResult> = {}, remote
   ],
   ...over,
 });
-const dropped = (outcome: ReconcileResult['outcome']): ReconcileResult => ({ outcome, resetLocal: false, resimSteps: 0, corrections: [], localError: 0 });
+const dropped = (outcome: ReconcileResult['outcome']): ReconcileResult => ({ outcome, resetLocal: false, resimSteps: 0, stalled: false, corrections: [], localError: 0 });
 
 describe('NetStats', () => {
   it('is all zeros before anything happened', () => {
@@ -65,6 +66,16 @@ describe('NetStats', () => {
     const s = n.summary(100);
     expect(s.droppedTotal).toBe(3);
     expect(s.localErrorMax).toBeCloseTo(0.01, 6);
+  });
+
+  it('counts snapshots that arrived while the connection was stalled', () => {
+    const n = new NetStats(0);
+    n.record(0, applied(0.01));
+    n.record(33, applied(0.4, { stalled: true, resimSteps: 0 }));
+    n.record(66, applied(0.4, { stalled: true, resimSteps: 0 }));
+    expect(n.summary(100).stallsTotal).toBe(2);
+    n.reset();
+    expect(n.summary(100).stallsTotal).toBe(0);
   });
 
   it('remembers only the most recent corrections', () => {
