@@ -2974,7 +2974,7 @@ git commit -m "feat(client): client-side prediction with rollback, error smoothi
 
 ## Plan 3 done when
 
-- [ ] `npm run typecheck`, `npm test` (268 tests at Task 21, 283 after the review fixes below), `npm run build` and `npm run smoke` all pass.
+- [ ] `npm run typecheck`, `npm test` (268 tests at Task 21, 285 after the review fixes below), `npm run build` and `npm run smoke` all pass.
 - [ ] Task 21 Step 4 passes in a real browser: identical Node and Chromium simulation hashes; prediction mode healthy with a bot; a key press moves the car ≥ 2× sooner than interpolation under 120 ms simulated lag; the physics-load fallback works; no console problems.
 - [ ] **The user has played it** with a bot or a second window — ideally also with `?lag=120&jitter=30&loss=1` — and confirmed it feels right.
 
@@ -2989,5 +2989,5 @@ git commit -m "feat(client): client-side prediction with rollback, error smoothi
 The whole-branch review found three Important defects that this plan's tests did not cover. They were fixed test-first in two commits after Task 21, so the code blocks above show the code at Task 21 (7cb16eb), not the final code:
 
 - **Interpolation base (a72b180).** When a snapshot needs no replay, `Predictor.reconcile` moves the previous-step states by the same correction as the present ones (`shiftBase`) instead of leaving them equal to the present, so a frame drawn between two steps does not pop forward on a fast link (LAN, localhost, 120 Hz display).
-- **Dead uplink (a72b180, fcd54ef).** More than `stallTicks` (180) unacknowledged inputs, or acknowledgements that stopped while the unacknowledged count grows on 8 consecutive snapshots, is a *stall*: nothing is replayed, the local car coasts on neutral input like the server plays it, `NetStats.stallsTotal` counts it, and the HUD line ends with "connection unstable". Normal replay resumes when acknowledgements return.
+- **Dead uplink (a72b180, fcd54ef).** More than `stallTicks` (180) unacknowledged inputs, or acknowledgements that stopped while the unacknowledged count grows on 8 consecutive snapshots, is a *stall*: nothing is replayed, the local car coasts on neutral input like the server plays it, `NetStats.stallsTotal` counts it, the HUD line ends with "connection unstable", and a one-time toast (`ClientSession.onStall`) says the server is not receiving your controls. Normal replay resumes when acknowledgements return.
 - **Fallback keeps the input numbering (fcd54ef).** `GameClient` delegates the networking mode, the input counter and the fall back to interpolation to the DOM-free `ClientSession` (`src/client/net/session.ts`). Its fallback continues numbering from `predictor.sequence`; restarting at 1 made the server drop every input until the count caught up with the ticks already played.
