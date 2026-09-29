@@ -1,0 +1,31 @@
+# Wreckyard — notes for working in this repo
+
+Online 3D demolition-derby arena for the browser: TypeScript, three.js, the deterministic build of Rapier on the server **and** the client, Node `ws`, Vite, Vitest. Design in `docs/superpowers/specs/`, one plan per milestone in `docs/superpowers/plans/`.
+
+## Commands
+
+- `npm run dev` — game server on :8080 and Vite on :5173 (proxies `/ws`). `npm test` — Vitest. `npm run typecheck` — `tsc` for client, server and tests.
+- `npm run build` then `npm start` — the production bundle (`dist/server/index.js` carries its dependencies; `dist/client` is served by it).
+- `npm run smoke` — runs the bundle from an empty folder (no `node_modules`) and the dev flow. `npm run loadtest` — many rooms against a running server (see the README). `npm run hash` — the determinism hash.
+
+## Layout
+
+- `src/shared` — what server and client must agree on: constants (all tuning), protocol, the simulation (`sim.ts`), vehicle, arena, damage.
+- `src/server` — `lobby.ts` and `room.ts` (rounds), `round.ts` and `rules.ts` (damage, eliminations), `bots.ts`, `guard.ts` and `limits.ts` (abuse limits), `app.ts` (HTTP and WebSocket), `config.ts` (environment variables).
+- `src/client` — `net/` (connection, prediction with rollback, interpolation; no DOM), `game/` (scene, cars, effects, audio, input; `matchState.ts` and the other DOM-free files are tested in Node), `ui/` (menu, HUD). `tests/` mirrors `src/`; `scripts/` holds the bot, load test and smoke check.
+
+## Rules that keep the game consistent
+
+- Axes: forward is +X, up is +Y, right is +Z. The simulation runs at a fixed 1/60 s. Inputs are quantized before they are applied, on both sides.
+- The shared simulation is deterministic: no `Math.random`, `Date.now` or `performance.now` in `src/shared`. `npm run hash` must keep printing the same hash in Node and in a browser (`await __derby.simHash()`); if a change moves it, the change altered the physics on purpose or by mistake, so say so.
+- Tuning lives only in `src/shared/constants.ts`; it is frozen at run time except in the offline `?sandbox`.
+- Any change to what goes over the wire changes `NET.PROTOCOL_VERSION`; the server refuses other versions, and the scripts read the constant.
+- Effects (dents, parts, particles, sound, shake) are cosmetic: they read server messages and snapshots and never touch the simulation or the rules.
+- The client's local impacts come from the prediction's live tick, never from a replay (or they would fire twice).
+
+## Working here
+
+- Write the test first and watch it fail. Some timing tests can fail when the machine is busy (the suite runs about 600 tests in about a minute); rerun a lone failure before chasing it.
+- WebGL pages only animate in a visible browser: check canvas behaviour with a real automation browser and `window.__derby.debug()`, not a hidden pane. The automation browser is capped at 50 frames a second, so judge cost by `frameMs`, draw calls and triangles.
+- Never stop someone's running `npm run dev`. Start anything of your own on another port (18000 and up) and stop it when done.
+- Merging, pushing and deploying are decisions for the owner; nothing here does them on its own.

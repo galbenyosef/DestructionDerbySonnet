@@ -1,0 +1,17 @@
+# Only what the build needs goes into the image build: package files, tsconfigs, vite.config.ts, src/ and scripts/build-server.mjs.
+node_modules
+dist
+coverage
+docs
+tests
+.git
+.gitignore
+.superpowers
+.playwright-mcp
+.env
+.env.*
+*.log
+*.md
+.DS_Store
+Dockerfile
+.dockerignore

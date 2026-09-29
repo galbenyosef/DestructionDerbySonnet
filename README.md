@@ -12,7 +12,8 @@ Online 3D demolition-derby arena for the browser (working title). Design: `docs/
 | `npm run typecheck` | type-check client, server and tests with `tsc` |
 | `npm run build` | build `dist/client` and the bundled `dist/server/index.js` |
 | `npm start` | run the bundled server (`PORT` env, default 8080) |
-| `npm run smoke` | after `npm run build`: check the production bundle and the dev flow |
+| `npm run smoke` | after `npm run build`: run the bundle from an empty folder (no `node_modules`) and the dev flow |
+| `npm run loadtest` | play many rooms at once against a running server (see *Limits and load test*) |
 
 ## Playing
 
@@ -20,9 +21,9 @@ Online 3D demolition-derby arena for the browser (working title). Design: `docs/
 - Skip the menu with URL parameters: `?auto=quick`, `?auto=create` or `?auto=join:ABCD`, plus `&name=Tester&color=2`. `?room=ABCD` pre-fills the join box. `?sandbox` opens the offline driving sandbox.
 - No friends around? The server already fills a room with bots up to four cars. To add a headless *player* that drives around and logs the round, run `npx tsx scripts/bot.ts --mode quick --name Bot` (`--mode join --code ABCD` for a private room).
 - Play across your network: `npm run build && npm start`, then open `http://<your-LAN-IP>:8080/` on each device.
-- Server configuration (environment variables): `PORT` (8080), `ALLOWED_ORIGINS` (comma-separated exact origins; default: same host only), `MAX_ROOMS` (12), `MAX_CONNECTIONS` (200), `STATIC_DIR` (`dist/client`), `BOT_FILL` (bots fill a room up to this many cars; default 4, 0 = none), `COUNTDOWN_SECONDS` (5), `ROUND_SECONDS` (240), `RESULTS_SECONDS` (8).
+- Server configuration (environment variables): `PORT` (8080), `ALLOWED_ORIGINS` (comma-separated exact origins; default: same host only), `MAX_ROOMS` (12), `MAX_CONNECTIONS` (200), `STATIC_DIR` (`dist/client`), `BOT_FILL` (bots fill a room up to this many cars; default 4, 0 = none), `COUNTDOWN_SECONDS` (5), `ROUND_SECONDS` (240), `RESULTS_SECONDS` (8), `MAX_CONNECTIONS_PER_IP` (16; 0 = no limit), `TRUST_PROXY` (how many reverse proxies stand in front of the server; default 0).
 - Debugging: `window.__derby.debug()` in the browser console prints the connection, phase, roster and every car's pose, hit points and whether it is still running.
-- `npm run smoke` uses ports 18080 (production bundle), 8080 (server) and 5173 (Vite). Set `SMOKE_PROD_PORT`, `SMOKE_SERVER_PORT` and `SMOKE_VITE_PORT` to run it next to a live `npm run dev`.
+- `npm run smoke` uses ports 18080 (the bundle, run from a temporary folder with no `node_modules`), 8080 (server) and 5173 (Vite). Set `SMOKE_PROD_PORT`, `SMOKE_SERVER_PORT` and `SMOKE_VITE_PORT` to run it next to a live `npm run dev`.
 
 ## Netcode
 
@@ -38,8 +39,8 @@ Online 3D demolition-derby arena for the browser (working title). Design: `docs/
 - Damage comes from impacts, measured as the impulse the collision transmits. Walls hurt half as much as cars, the rear of a car is its sturdiest side and the front its weakest, and scraping or pushing does nothing. A car is out at 0 HP, after 3 s upside down, after 8 s without moving, or when it leaves the arena; after 20 s without hitting or being hit it loses 2 HP per second until it is in a hit. Cars that are out stay in the arena as wrecks.
 - Scoring: 1 point per HP of damage dealt, +50 for the elimination, +100 for winning the round. Running totals stay while you are in the room.
 - Tuning lives in `COMBAT` and `ROUND` in `src/shared/constants.ts`.
-- The match screen shows the round clock and how many cars still run (top centre), the scoreboard (top right; hold **Tab** for kills and health), a kill feed under it, your health bar with the damage taken on each side of the car and your speed (bottom centre), a red flash when you are hit, and banners for the countdown, GO, being out and the results. Other cars carry their name and a health bar. **F3** shows the network line (mode, ping, frame rate, prediction error).
-- When your car is out, or you joined a round that was already running, a camera orbits a car that is still running; **← → (or A/D, Q/E)** switches car. Your controls keep being sent while you watch, so the server does not drop you as inactive.
+- The match screen shows the round clock and how many cars still run (top centre), the scoreboard (top right; hold **Tab** for kills and health), a kill feed under it, your health bar with the damage taken on each side of the car and your speed (bottom centre), a red flash when you are hit, and banners for the countdown, GO, being out and the results. Other cars carry their name and a health bar. **F3** shows the network line (mode, ping, frame rate, prediction error); on a Mac keyboard it is **Fn+F3** unless the function keys are set to standard.
+- When your car is out, or you joined a round that was already running, a camera orbits a car that is still running; **← → (or A/D, Q/E; the bumpers on a gamepad)** switches car. Your controls keep being sent while you watch, so the server does not drop you as inactive.
 
 ## Damage you can see and hear
 
@@ -50,3 +51,16 @@ Online 3D demolition-derby arena for the browser (working title). Design: `docs/
 - With `?net=interp` there is no local prediction, so impacts show and sound when the server's hit message arrives.
 - F3's line shows the script time per frame; `window.__derby.debug()` reports the draw calls and triangles of the last frame and the number of live particles and pieces of debris.
 
+
+## Settings
+
+- The menu has a **Graphics** choice, a **Volume** slider and a **Sound** switch. They are remembered in this browser. In a match **G** steps through the graphics presets and **M** mutes.
+- **High** is the full look (pixel ratio up to 2, 2048 px shadows, glow, crowd, every effect, 40 pieces of debris). **Medium** draws fewer pixels (up to 1.5), sharpens shadows less, and emits 60 % of the particles and 24 pieces of debris. **Low** draws at pixel ratio 1 with no shadows, no glow and no crowd, 30 % of the particles and 12 pieces of debris.
+- If the frame rate stays under 40 for about six seconds the game steps down one preset by itself and says so; it never steps up on its own, so it cannot flap. `?bloom=0` still switches the glow off whatever the preset.
+
+## Limits, hosting and Docker
+
+- Per address, the server allows 16 open sockets (`MAX_CONNECTIONS_PER_IP`), locks an address out for 30 s after 8 failed joins in a minute (a wrong or full room code), and lets it create 6 private rooms a minute. Loopback, link-local and private-network addresses are exempt, because behind a reverse proxy on the same machine every player looks like one of them. Behind reverse proxies, set `TRUST_PROXY` to how many there are (usually `1`) so the limits apply to the real addresses: the server then reads the address from `X-Forwarded-For` counting that many entries from the right, because entries further left can be forged by the client. A socket that floods binary input is closed; room codes come from the operating system's random source.
+- Only same-host WebSocket origins are accepted unless `ALLOWED_ORIGINS` lists others (exact origins, comma-separated). `/healthz` answers with the room, player and connection counts, the 99th-percentile step time and the process memory.
+- Docker: `docker build -t wreckyard .` then `docker run --rm -p 8080:8080 wreckyard`, and open http://localhost:8080/. The image holds only `dist/` (the bundle carries its own dependencies) and runs as the `node` user with a health check on `/healthz`. Pass the settings above with `-e`.
+- Load test: start a server with short rounds and no per-address limit (`MAX_ROOMS=12 BOT_FILL=0 MAX_CONNECTIONS_PER_IP=0 COUNTDOWN_SECONDS=3 ROUND_SECONDS=30 RESULTS_SECONDS=5 npm start`), then `npm run loadtest -- --rooms 10 --per-room 8 --seconds 300`. It seats headless drivers in that many rooms, keeps them driving, samples `/healthz` and prints PASS or the limits it broke (step time, memory growth, snapshot rate, refused or closed sockets); `--help`-style options are listed at the top of `scripts/loadtest.ts`.
