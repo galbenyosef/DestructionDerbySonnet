@@ -76,15 +76,21 @@ export function spawnPose(index: number, count: number): SpawnPose {
   return { pos: { x, y: CAR.SPAWN_HEIGHT, z }, quat: quatFromYaw(yaw), yaw };
 }
 
-export function buildArena(world: RAPIER.World, options: ArenaOptions = {}): void {
+export interface ArenaColliders {
+  /** Handle of the ground collider: the one static surface a car body is not meant to touch (only wheels and a flipped roof do). */
+  ground: number;
+}
+
+export function buildArena(world: RAPIER.World, options: ArenaOptions = {}): ArenaColliders {
   const walls = options.walls ?? true;
   const half = options.groundHalfExtent ?? ARENA.GROUND_HALF_EXTENT;
   const body = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
-  world.createCollider(
+  const ground = world.createCollider(
     RAPIER.ColliderDesc.cuboid(half, 0.5, half).setTranslation(0, -0.5, 0).setFriction(1).setRestitution(0),
     body,
   );
-  if (!walls) return;
+  const colliders = { ground: ground.handle };
+  if (!walls) return colliders;
   for (const b of [...wallSegments(), ...obstacleBoxes()]) {
     world.createCollider(
       RAPIER.ColliderDesc.cuboid(b.hx, b.hy, b.hz)
@@ -95,4 +101,5 @@ export function buildArena(world: RAPIER.World, options: ArenaOptions = {}): voi
       body,
     );
   }
+  return colliders;
 }
