@@ -40,3 +40,13 @@ Online 3D demolition-derby arena for the browser (working title). Design: `docs/
 - Tuning lives in `COMBAT` and `ROUND` in `src/shared/constants.ts`.
 - The match screen shows the round clock and how many cars still run (top centre), the scoreboard (top right; hold **Tab** for kills and health), a kill feed under it, your health bar with the damage taken on each side of the car and your speed (bottom centre), a red flash when you are hit, and banners for the countdown, GO, being out and the results. Other cars carry their name and a health bar. **F3** shows the network line (mode, ping, frame rate, prediction error).
 - When your car is out, or you joined a round that was already running, a camera orbits a car that is still running; **← → (or A/D, Q/E)** switches car. Your controls keep being sent while you watch, so the server does not drop you as inactive.
+
+## Damage you can see and hear
+
+- Every hit dents the car where it landed. The server tells everyone which car was hit, where and how hard, and each browser crumples the same mesh the same way, so two players see the same wreck. A player who joins mid-round is sent the round's latest hits (up to 64) and sees the cars dented as they are. Parts come off when a side has taken enough damage (bumpers first, then hood or trunk, and doors) and fly away as debris; the next round starts with whole cars.
+- Sparks, dust, smoke and fire are particles drawn on the GPU: sparks on impacts and scrapes, dust behind fast cars, smoke from a car under 50 HP and fire under 25, and a wreck burns, then smoulders. Tyre marks are drawn into one texture over the arena while a tyre slides or the handbrake is on, and wiped for the next round.
+- The camera shakes with impacts of your own car, felt at once from the local simulation rather than after the round trip, and a little with nearby ones. Bloom makes the lamps, headlights and sparks glow; `?bloom=0` turns it off. The stands have a crowd, and tyre stacks stand outside the barrier.
+- Sound is synthesised in the browser, with no sound files: an engine for every running car, crashes by the size of the impact, the countdown beeps and the horn. **H** honks (other players cannot hear it) and **M** mutes. Browsers allow sound only after a click or a key press.
+- With `?net=interp` there is no local prediction, so impacts show and sound when the server's hit message arrives.
+- F3's line shows the script time per frame; `window.__derby.debug()` reports the draw calls and triangles of the last frame and the number of live particles and pieces of debris.
+

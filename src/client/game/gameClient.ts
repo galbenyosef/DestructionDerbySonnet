@@ -10,12 +10,16 @@ import { formatNetStats } from '../net/netStats';
 import { ClientSession, type DrawPose, type NetMode } from '../net/session';
 import type { Hud } from '../ui/hud';
 import type { JoinChoice } from '../ui/menu';
+import { AudioEngine, type Listener } from './audio';
+import { CountdownBeeper } from './audioParams';
 import { applyChaseView, ChaseCamera } from './camera';
 import { CarView } from './carView';
+import { FxDirector } from './fx';
 import { KeyboardInput } from './input';
 import { MatchState } from './matchState';
 import { NameTag } from './nameTag';
 import type { GameScene } from './scene';
+import { CanvasMarks } from './skidMarks';
 import { SpectatorCamera } from './spectator';
 import { FixedStepper } from './stepper';
 
@@ -55,6 +59,11 @@ export class GameClient {
   private readonly spectator = new SpectatorCamera();
   private readonly match = new MatchState();
   private readonly keyboard = new KeyboardInput(undefined, undefined, (code) => this.onKey(code));
+  private readonly audio = new AudioEngine();
+  private readonly beeper = new CountdownBeeper();
+  private readonly marks = new CanvasMarks();
+  private readonly fx: FxDirector;
+  private readonly drawingSize = new THREE.Vector2();
   private readonly stepper = new FixedStepper(PHYSICS.DT);
   private readonly timer = new THREE.Timer();
   private readonly conn: Connection;
@@ -67,11 +76,15 @@ export class GameClient {
   private lastPoses: DrawPose[] = [];
   /** True while your own car is running: the chase camera follows it; otherwise the spectator camera orbits another car. */
   private driving = false;
+  /** The car the camera follows (yours, or the one being watched): the point sound is heard from. */
+  private focus: DrawPose | null = null;
   private statsVisible = false;
   private raf = 0;
   private stopped = false;
   private frames = 0;
   private fps = 0;
+  /** Milliseconds of script per frame, smoothed (what this machine's processor spends; the graphics card is not included). */
+  private frameMs = 0;
   private fpsAt = performance.now();
   private statsAt = 0;
 
@@ -84,6 +97,12 @@ export class GameClient {
       onStall: () => this.opts.hud.showNotice('Connection unstable — the server is not receiving your controls.'),
     });
     this.timer.connect(document);
+    this.fx = new FxDirector({
+      scene: opts.gs.scene,
+      audio: this.audio,
+      marks: { surface: this.marks, object: this.marks.mesh, upload: () => this.marks.upload() },
+      view: (slot) => this.views.get(slot),
+    });
     const lag = opts.lag ?? null;
     this.conn = new Connection(
       opts.url,
@@ -99,6 +118,8 @@ export class GameClient {
   }
 
   start(): void {
+    if (navigator.userActivation?.isActive) this.audio.unlock(); // inside the click that started the game; otherwise the first key or click does it
+    window.addEventListener('pointerdown', this.unlockAudio);
     this.conn.connect();
     this.raf = requestAnimationFrame(this.frame);
     const derby = ((window as unknown as { __derby?: Record<string, unknown> }).__derby ??= {});
@@ -111,6 +132,10 @@ export class GameClient {
     this.stopped = true;
     cancelAnimationFrame(this.raf);
     this.keyboard.dispose();
+    window.removeEventListener('pointerdown', this.unlockAudio);
+    this.fx.dispose();
+    this.marks.dispose();
+    this.audio.dispose();
     this.conn.close();
     for (const slot of [...this.tags.keys()]) this.removeTag(slot);
     for (const v of this.views.values()) v.dispose();
@@ -150,6 +175,7 @@ export class GameClient {
         this.session.onWelcome(m.you, m.epoch, m.phase?.phase ?? null);
         this.match.onWelcome(m);
         this.applyRoster();
+        this.fx.onWelcome(m.dents); // the cars of a round in progress are dented and stripped as the players saw them
         this.opts.hud.setRoom(m.room.code, m.room.public);
         break;
       case 'roster':
@@ -161,6 +187,7 @@ export class GameClient {
         this.spectator.reset();
         this.match.onRoster(m);
         this.applyRoster();
+        this.fx.onRoster();
         break;
       case 'phase':
         this.session.onPhase(m.phase);
@@ -168,9 +195,11 @@ export class GameClient {
         break;
       case 'hit':
         this.match.onHit(m);
+        this.fx.onHit(m, { poses: this.lastPoses, mySlot: this.mySlot, listener: this.listener() });
         break;
       case 'ko':
         this.match.onKo(m);
+        this.fx.onKo(m, { poses: this.lastPoses, listener: this.listener() });
         break;
       case 'scores':
         this.match.onScores(m);
@@ -239,8 +268,27 @@ export class GameClient {
     this.tags.delete(slot);
   }
 
-  /** F3 shows the network line; while you are out, the cycle keys pick the next car to watch. */
+  private readonly unlockAudio = (): void => this.audio.unlock();
+
+  /** Where sound is heard from: the car you drive or watch, or the camera when there is none. */
+  private listener(): Listener {
+    if (this.focus) return { pos: this.focus.pos, quat: this.focus.quat };
+    const c = this.opts.gs.camera;
+    return { pos: { x: c.position.x, y: c.position.y, z: c.position.z }, quat: { x: c.quaternion.x, y: c.quaternion.y, z: c.quaternion.z, w: c.quaternion.w } };
+  }
+
+  /** F3 shows the network line, H sounds the horn, M mutes; while you are out, the cycle keys pick the next car to watch. */
   private onKey(code: string): void {
+    this.audio.unlock(); // any key is a gesture the browser accepts
+    if (code === 'KeyH') {
+      this.audio.horn();
+      return;
+    }
+    if (code === 'KeyM') {
+      this.audio.setMuted(!this.audio.muted);
+      this.opts.hud.showNotice(this.audio.muted ? 'Sound off (M)' : 'Sound on (M)');
+      return;
+    }
     if (code === 'F3') {
       this.statsVisible = !this.statsVisible;
       this.opts.hud.setStatsVisible(this.statsVisible);
@@ -252,6 +300,7 @@ export class GameClient {
 
   private readonly frame = (ts: number): void => {
     if (this.stopped) return;
+    const started = performance.now();
     this.timer.update(ts);
     const dt = this.timer.getDelta();
 
@@ -287,10 +336,30 @@ export class GameClient {
     else if (mine) this.chase.update(this.opts.gs.camera, { pos: mine.pos, quat: mine.quat, speed: vlen(mine.linvel) }, dt);
     this.match.setWatching(this.driving ? -1 : this.spectator.watching);
     this.match.onCars(poses.filter((p) => p.visible).map((p) => ({ slot: p.slot, hp: p.hp, alive: p.alive, speed: vlen(p.linvel) })));
-    this.opts.hud.setMatch(this.match.view(), this.keyboard.isDown('Tab'));
+    const view = this.match.view();
+    this.opts.hud.setMatch(view, this.keyboard.isDown('Tab'));
+    const beep = this.beeper.next(view);
+    if (beep) this.audio.beep(beep);
+
+    // effects: what your own car ran into this tick shows and sounds now; everything else runs from what the server said
+    this.focus = this.driving ? (mine ?? null) : (poses.find((p) => p.slot === this.spectator.watching && p.visible) ?? null);
+    const listener = this.listener();
+    this.fx.onLocalImpacts(this.session.takeImpacts(), { poses, listener });
+    const cam = this.opts.gs.camera;
+    this.opts.gs.renderer.getDrawingBufferSize(this.drawingSize);
+    this.fx.frame({
+      dt,
+      now: performance.now() / 1000,
+      poses,
+      mySlot: this.mySlot,
+      listener,
+      camera: cam,
+      pixelScale: this.drawingSize.y / (2 * Math.tan((cam.fov * Math.PI) / 360)),
+    });
     this.opts.gs.resize();
     this.opts.gs.render();
     this.updateStats();
+    this.frameMs += (performance.now() - started - this.frameMs) * 0.05;
     this.raf = requestAnimationFrame(this.frame);
   };
 
@@ -308,7 +377,7 @@ export class GameClient {
       const net = predicted
         ? formatNetStats(predicted.stats.summary(now)) + (this.session.stalled ? ' · connection unstable' : '')
         : `snapshots ${this.session.snapshotsReceived} · buffer ${this.session.interpolator.size}`;
-      this.opts.hud.setStats(`${this.session.mode} · ping ${Math.round(this.conn.rttMs)} ms · ${this.fps} fps · ${net}`);
+      this.opts.hud.setStats(`${this.session.mode} · ping ${Math.round(this.conn.rttMs)} ms · ${this.fps} fps · ${this.frameMs.toFixed(1)} ms/frame · ${net}`);
     }
   }
 
@@ -334,10 +403,21 @@ export class GameClient {
             lastIgnored: predicted.predictor.lastIgnored,
           }
         : null,
+      fx: {
+        debris: this.fx.debris.active,
+        shake: this.fx.shake.level,
+        particles: { spark: this.fx.particles.alive('spark'), smoke: this.fx.particles.alive('smoke'), fire: this.fx.particles.alive('fire'), dust: this.fx.particles.alive('dust') },
+        audio: { ready: this.audio.ready, muted: this.audio.muted },
+      },
       snapshotsReceived: this.session.snapshotsReceived,
       interpSize: this.session.interpolator.size,
       stale: this.session.interpolator.stale,
       fps: this.fps,
+      frameMs: this.frameMs,
+      render: (() => {
+        const info = this.opts.gs.renderer.info;
+        return { calls: info.render.calls, triangles: info.render.triangles, geometries: info.memory.geometries, textures: info.memory.textures };
+      })(),
       poses: this.lastPoses.map((p) => ({
         slot: p.slot,
         x: p.pos.x,

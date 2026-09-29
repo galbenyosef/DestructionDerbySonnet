@@ -68,6 +68,7 @@ async function boot(): Promise<void> {
     }
     hudEl.textContent = '';
     const gs = createGameScene(canvas);
+    gs.setBloom(params.get('bloom') !== '0'); // ?bloom=0 turns the glow off, to see what it costs on this machine
     const initialCode = params.get('room') ?? undefined;
     let auto = automaticChoice(params);
     let error: string | undefined;
