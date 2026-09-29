@@ -25,6 +25,8 @@ interface Window {
   attacker: number;
   openedAt: number;
   lastAt: number;
+  /** Last tick that transmitted an impact-sized impulse (COMBAT.IMPACT_IMPULSE). */
+  lastImpactAt: number;
   impulse: number; // N·s
   sx: number;
   sy: number;
@@ -34,8 +36,10 @@ interface Window {
 /**
  * Turns the per-tick contacts of a simulation into discrete hits. A collision spreads over a few ticks (and a slide along
  * a wall over many), so contacts between the same two bodies are merged into a window that closes after a short quiet
- * spell or a maximum length; damage is computed once per window from its total impulse. Ticks with only a light
- * touch (a scrape, or two cars pushing against each other) are ignored, so pushing and scraping never wear a car down.
+ * spell or a maximum length; damage is computed once per window from its total impulse. A window is opened only by a tick
+ * that transmits an impact-sized impulse, and lighter ticks join it only in the few ticks after the last such tick (the
+ * tail of the collision). So scraping and pushing never wear a car down, however many cars push in a line: a car pinned
+ * against a wall by two others feels a steady half kN·s a tick, which is weight and engines, not a blow.
  */
 export class HitTracker {
   private readonly windows = new Map<number, Window>();
@@ -63,14 +67,21 @@ export class HitTracker {
 
   private add(tick: number, victim: number, attacker: number, impulse: number, point: Vec3, hits: Hit[]): void {
     const key = victim * 16 + attacker + 1;
+    const impact = impulse >= COMBAT.IMPACT_IMPULSE;
     let w = this.windows.get(key);
     if (w && tick - w.openedAt >= COMBAT.WINDOW_MAX_TICKS) {
-      this.close(w, hits); // a window that has been open this long is paid out; this contact starts the next one
+      this.close(w, hits); // a window that has been open this long is paid out; an impact-sized contact starts the next one
+      this.windows.delete(key);
       w = undefined;
     }
     if (!w) {
-      w = { victim, attacker, openedAt: tick, lastAt: tick, impulse: 0, sx: 0, sy: 0, sz: 0 };
+      if (!impact) return; // a shove or a scrape never starts a hit
+      w = { victim, attacker, openedAt: tick, lastAt: tick, lastImpactAt: tick, impulse: 0, sx: 0, sy: 0, sz: 0 };
       this.windows.set(key, w);
+    } else if (impact) {
+      w.lastImpactAt = tick;
+    } else if (tick - w.lastImpactAt > COMBAT.IMPACT_TAIL_TICKS) {
+      return; // the tail of a collision counts; a steady push long after it does not
     }
     w.lastAt = tick;
     w.impulse += impulse;

@@ -51,18 +51,42 @@ describe('HitTracker', () => {
     expect(run(light)).toEqual([]);
   });
 
+  it('ignores a steady shove however many cars are in the line: only an impact-sized tick starts a hit', () => {
+    const push = COMBAT.IMPACT_IMPULSE - 1_000; // above the scrape threshold, well under an impact: two pushers in a line
+    expect(push).toBeGreaterThan(COMBAT.SCRAPE_IMPULSE);
+    const steady = Array.from({ length: 300 }, () => [carCar(push, 1, 2), carCar(push, 0, 1), wall(push, 0)]);
+    expect(run(steady)).toEqual([]);
+  });
+
+  it('counts the tail of an impact but not the shove that follows it', () => {
+    const push = COMBAT.IMPACT_IMPULSE - 1_000;
+    const ticks = [[carCar(9_000, 0, 1)], ...Array.from({ length: 60 }, () => [carCar(push, 0, 1)])];
+    const hits = run(ticks).filter((h) => h.victim === 0);
+    expect(hits).toHaveLength(1); // the shove does not open a second hit either
+    expect(hits[0]!.impulse).toBeCloseTo((9_000 + COMBAT.IMPACT_TAIL_TICKS * push) / 1000, 9);
+  });
+
+  it('keeps extending a hit while impact-sized ticks keep coming, whatever came between', () => {
+    const push = COMBAT.IMPACT_IMPULSE - 1_000;
+    const ticks = [[carCar(9_000)], [carCar(push)], [carCar(push)], [carCar(3_000)], [carCar(push)]];
+    const hits = run(ticks).filter((h) => h.victim === 0);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.impulse).toBeCloseTo((9_000 + 3 * push + 3_000) / 1000, 9);
+  });
+
   it('starts a new hit after a quiet spell', () => {
     const hits = run([[carCar(9_000)], [], [], [], [], [], [], [], [], [], [carCar(9_000)]]);
     expect(hits.filter((h) => h.victim === 0)).toHaveLength(2);
   });
 
   it('closes a window that stays open, so long grinding is paid for as it happens', () => {
-    const grind = Array.from({ length: 65 }, () => [carCar(COMBAT.SCRAPE_IMPULSE + 150)]);
+    const blow = COMBAT.IMPACT_IMPULSE + 150; // a slide that keeps hitting hard: bumping along a jagged wall
+    const grind = Array.from({ length: 65 }, () => [carCar(blow)]);
     const hits = run(grind).filter((h) => h.victim === 0);
     expect(hits).toHaveLength(3); // windows of 30, 30 and 5 ticks
     expect(hits.map((h) => h.tick)).toEqual([0, 30, 60]);
-    expect(hits[0]!.impulse).toBeCloseTo((30 * (COMBAT.SCRAPE_IMPULSE + 150)) / 1000, 9);
-    expect(hits[2]!.impulse).toBeCloseTo((5 * (COMBAT.SCRAPE_IMPULSE + 150)) / 1000, 9);
+    expect(hits[0]!.impulse).toBeCloseTo((30 * blow) / 1000, 9);
+    expect(hits[2]!.impulse).toBeCloseTo((5 * blow) / 1000, 9);
   });
 
   it('gives impacts below the minimum no damage at all', () => {
@@ -200,6 +224,29 @@ describe('HitTracker on the real simulation', () => {
     }
     expect(wallTicks).toBeGreaterThan(300); // it really did grind along the wall
     expect(total).toBeLessThan(12);
+  });
+
+  it('does not price a car pinned against the wall by two cars pushing in a line as a stream of hits', () => {
+    const s = new Simulation([0, 1, 2]);
+    sims.push(s);
+    // 0 sits handbraked against the wall, 1 shoves it and 2 shoves 1, all at full throttle for ten seconds
+    place(s, 0, 42.4, 0, 0, 0);
+    place(s, 1, 37.6, 0, 0, 0);
+    place(s, 2, 32.8, 0, 0, 0);
+    const tracker = new HitTracker();
+    const hits: Hit[] = [];
+    for (let t = 0; t < 600; t++) {
+      s.setInput(0, { throttle: 0, steer: 0, handbrake: true });
+      s.setInput(1, { throttle: 1, steer: 0, handbrake: false });
+      s.setInput(2, { throttle: 1, steer: 0, handbrake: false });
+      s.step();
+      hits.push(...tracker.update(s.tick, s.contacts(COMBAT.SCRAPE_IMPULSE)));
+    }
+    expect(Math.max(...hits.map((h) => h.tick), 0)).toBeLessThan(180); // the cars meet at the start; ten seconds of shoving add nothing
+    for (const slot of [0, 1, 2]) {
+      // the pile-up itself costs the pinned car about 16 HP; ten seconds of shoving used to take 450 HP off it
+      expect(hits.filter((h) => h.victim === slot).reduce((sum, h) => sum + h.damage, 0)).toBeLessThan(25);
+    }
   });
 
   it('does not wear cars down when they merely push against each other at full throttle', () => {

@@ -98,6 +98,13 @@ export const COMBAT = {
   MAX_HP: 100,
   /** A contact that transmits less impulse than this (N·s) in one tick is a scrape or a push, not an impact. */
   SCRAPE_IMPULSE: 350,
+  /**
+   * A hit starts only on a tick that transmits at least this much (N·s): every collision measured so far does in its first
+   * tick (3.7 to 29 kN·s), while cars pushing in a line against a wall stay near 0.5 to 1.1 kN·s per tick, however long they do.
+   */
+  IMPACT_IMPULSE: 2000,
+  /** Lighter ticks (still above SCRAPE_IMPULSE) join a hit only within this many ticks of its last impact-sized tick: the tail of a collision counts, a shove after it does not. */
+  IMPACT_TAIL_TICKS: 6,
   /** An impact window closes after this many ticks without an impact, or when it has been open this long. */
   WINDOW_GAP_TICKS: 3,
   WINDOW_MAX_TICKS: 30,
