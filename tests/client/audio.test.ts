@@ -141,6 +141,29 @@ describe('AudioEngine', () => {
     expect(gains[2]!).toBeLessThan(gains[0]!);
   });
 
+  it('scales the master level with the volume setting, before and after it is unlocked, and keeps mute in charge', () => {
+    const ctx = new FakeContext();
+    const audio = engineWith(ctx);
+    audio.setVolume(0.5); // set before there is a context: applied when it is made
+    audio.unlock();
+    const master = ctx.nodes[0]!;
+    const full = master.gain.value * 2;
+    expect(full).toBeGreaterThan(0.3);
+    audio.setVolume(0.25);
+    expect(master.gain.value).toBeCloseTo(full * 0.25, 9);
+    audio.setMuted(true);
+    expect(master.gain.value).toBe(0);
+    audio.setVolume(1);
+    expect(master.gain.value).toBe(0); // still muted
+    audio.setMuted(false);
+    expect(master.gain.value).toBeCloseTo(full, 9);
+    audio.setVolume(Number.NaN);
+    audio.setVolume(7);
+    expect(master.gain.value).toBeCloseTo(full, 9); // clamped to 1
+    audio.setVolume(-1);
+    expect(master.gain.value).toBe(0);
+  });
+
   it('mutes and unmutes', () => {
     const ctx = new FakeContext();
     const audio = engineWith(ctx);

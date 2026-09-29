@@ -186,6 +186,45 @@ describe('FxDirector impacts of the local car', () => {
   });
 });
 
+describe('FxDirector density (the graphics preset)', () => {
+  const sparksFor = (density: number): number => {
+    const t = setup();
+    t.fx.setDensity(density, 40);
+    for (let i = 0; i < 20; i++) t.fx.onLocalImpacts([impact(12)], t.frameArgs());
+    return t.sparks();
+  };
+
+  it('thins the particles to the density, on average, and can switch them off', () => {
+    const all = sparksFor(1);
+    const some = sparksFor(0.3);
+    expect(all).toBeGreaterThan(200);
+    expect(some).toBeGreaterThan(all * 0.15);
+    expect(some).toBeLessThan(all * 0.45);
+    expect(sparksFor(0)).toBe(0);
+  });
+
+  it('thins smoke and dust too, and passes the debris limit on', () => {
+    const t = setup();
+    t.fx.setDensity(0.2, 2);
+    t.setPoses([pose(0), pose(1, { hp: 20 }), pose(2, { linvel: { x: 14, y: 0, z: 0 } })]);
+    t.frames(1.5);
+    const thin = t.fx.particles.alive('smoke') + t.fx.particles.alive('dust');
+    const full = setup();
+    full.setPoses([pose(0), pose(1, { hp: 20 }), pose(2, { linvel: { x: 14, y: 0, z: 0 } })]);
+    full.frames(1.5);
+    expect(thin).toBeLessThan((full.fx.particles.alive('smoke') + full.fx.particles.alive('dust')) * 0.5);
+    for (let i = 0; i < 6; i++) t.fx.onHit(hit({ dmg: 30, tick: i, victim: i % 2 ? 1 : 2, zone: (['front', 'rear', 'left', 'right'] as const)[i % 4]! }), t.frameArgs());
+    expect(t.fx.debris.active).toBeLessThanOrEqual(2);
+  });
+
+  it('copes with a broken density', () => {
+    const t = setup();
+    t.fx.setDensity(Number.NaN, Number.NaN);
+    t.fx.onLocalImpacts([impact(12)], t.frameArgs());
+    expect(t.sparks()).toBeGreaterThan(10);
+  });
+});
+
 describe('FxDirector smoke, fire and wrecks', () => {
   it('lets a badly hurt car smoke and then burn, and a healthy one do neither', () => {
     const t = setup();

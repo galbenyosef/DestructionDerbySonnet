@@ -150,6 +150,45 @@
       .menu button:hover {
         filter: brightness(1.15);
       }
+      .menu .settings {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 12px;
+        align-items: end;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid var(--line);
+      }
+      .menu .settings[hidden] {
+        display: none;
+      }
+      .menu .settings select {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 6px;
+        padding: 8px 10px;
+        font: inherit;
+        color: var(--ink);
+        background: rgba(0, 0, 0, 0.35);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+      .menu .settings input[type='range'] {
+        padding: 0;
+        height: 34px;
+      }
+      .menu .settings .check {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding-bottom: 10px;
+        text-transform: none;
+        letter-spacing: 0;
+      }
+      .menu .settings .check input {
+        width: auto;
+        margin: 0;
+      }
       .menu .error {
         min-height: 1.3em;
         margin: 12px 0 0;

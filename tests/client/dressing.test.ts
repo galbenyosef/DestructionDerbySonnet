@@ -64,6 +64,20 @@ describe('bowlHeight', () => {
   });
 });
 
+describe('the crowd switch', () => {
+  it('hides and shows the crowd and nothing else', () => {
+    const dressing = createDressing();
+    const instanced = dressing.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh);
+    const crowdMesh = instanced.find((m) => m.count === crowd().length)!;
+    const tyres = instanced.find((m) => m !== crowdMesh)!;
+    dressing.setCrowd(false);
+    expect([crowdMesh.visible, tyres.visible]).toEqual([false, true]);
+    dressing.setCrowd(true);
+    expect(crowdMesh.visible).toBe(true);
+    dressing.dispose();
+  });
+});
+
 describe('createDressing', () => {
   it('builds the stands, the crowd and the tyres as three draw calls, and releases them when disposed', () => {
     const dressing = createDressing();

@@ -59,6 +59,8 @@ const JERSEYS = [0x2a2f3d, 0x3a2a2a, 0x2a3a30, 0x4a4030, 0x30384a, 0x5a5a66, 0x6
 /** The stands, the crowd and the tyre stacks: everything around the arena that is only there to look at. */
 export interface Dressing {
   readonly group: THREE.Group;
+  /** Shows or hides the crowd (the low graphics preset draws the stands empty). */
+  setCrowd(visible: boolean): void;
   dispose(): void;
 }
 
@@ -118,6 +120,9 @@ export function createDressing(): Dressing {
 
   return {
     group,
+    setCrowd(visible) {
+      crowdMesh.visible = visible;
+    },
     dispose() {
       for (const g of geometries) g.dispose();
       for (const m of materials) m.dispose();

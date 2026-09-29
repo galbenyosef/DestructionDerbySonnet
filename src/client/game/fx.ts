@@ -79,6 +79,8 @@ export class FxDirector {
   private readonly crashedAt = new Map<string, number>();
   private readonly localImpactAt = new Map<number, number>();
   private now = 0;
+  /** Multiplies how many particles are emitted (the graphics preset). */
+  private density = 1;
 
   constructor(private readonly options: FxOptions) {
     this.random = options.random ?? mulberry32(0xf00d);
@@ -86,6 +88,19 @@ export class FxDirector {
     this.marks = new SkidMarks(options.marks.surface);
     options.scene.add(this.particles.object, this.debris.object);
     if (options.marks.object) options.scene.add(options.marks.object);
+  }
+
+  /** Sets how many particles the effects emit (1 = all, 0.3 = under a third) and how many pieces of debris may lie around. */
+  setDensity(particles: number, debris: number): void {
+    this.density = Number.isFinite(particles) ? clamp(particles, 0, 1) : 1;
+    this.debris.setLimit(debris);
+  }
+
+  /** `count` particles thinned by the density, rounded up or down at random so that the average is right. */
+  private thin(count: number): number {
+    const k = count * this.density;
+    const whole = Math.floor(k);
+    return whole + (this.random() < k - whole ? 1 : 0);
   }
 
   // ---- what happens -----------------------------------------------------------------------------
@@ -132,8 +147,8 @@ export class FxDirector {
     const pose = frame.poses.find((p) => p.slot === k.victim);
     if (!pose || k.reason === 'disconnected') return;
     const at = worldPoint(pose, { x: 0.6, y: 0.5, z: 0 });
-    for (let i = 0; i < 14; i++) this.puff('fire', at, 2.5, 1.2 + this.random() * 0.8, 0.5 + this.random() * 0.5);
-    for (let i = 0; i < 10; i++) this.puff('smoke', at, 1.8, 2 + this.random() * 1.5, 0.9 + this.random() * 0.6);
+    for (let i = this.thin(14); i > 0; i--) this.puff('fire', at, 2.5, 1.2 + this.random() * 0.8, 0.5 + this.random() * 0.5);
+    for (let i = this.thin(10); i > 0; i--) this.puff('smoke', at, 1.8, 2 + this.random() * 1.5, 0.9 + this.random() * 0.6);
     this.options.audio.crash(25, at, frame.listener);
   }
 
@@ -209,7 +224,7 @@ export class FxDirector {
   /** Sparks, a puff of dust, a jolt of the camera and a crash sound for an impact of `kns` kN·s at `at`. */
   private impact(kns: number, at: Vec3, carVelocity: Vec3, pair: string, listener: Listener, distance: number, sparks = true): void {
     if (sparks) this.sparks(at, carVelocity, clamp(Math.round(kns * 3), 4, 40));
-    for (let i = 0; i < 4; i++) this.puff('dust', at, 2, 0.8 + this.random() * 0.6, 0.6 + this.random() * 0.5);
+    for (let i = this.thin(4); i > 0; i--) this.puff('dust', at, 2, 0.8 + this.random() * 0.6, 0.6 + this.random() * 0.5);
     this.shake.add(traumaForImpact(kns, distance));
     const last = this.crashedAt.get(pair) ?? -1e9;
     if (this.now - last >= FX.CRASH_COOLDOWN) {
@@ -219,7 +234,7 @@ export class FxDirector {
   }
 
   private sparks(at: Vec3, carVelocity: Vec3, count: number): void {
-    for (let i = 0; i < count; i++) {
+    for (let i = this.thin(count); i > 0; i--) {
       const a = this.random() * Math.PI * 2;
       const up = 1 + this.random() * 4;
       const out = 1 + this.random() * 5;
@@ -251,7 +266,7 @@ export class FxDirector {
   /** How many whole particles are due after `dt` seconds at `perSecond`, keeping the remainder for the next frame. */
   private due(slot: number, key: 'smoke' | 'fire' | 'dust', perSecond: number, dt: number): number {
     const r = this.rate(slot);
-    r[key] += perSecond * dt;
+    r[key] += perSecond * this.density * dt;
     const n = Math.floor(r[key]);
     r[key] -= n;
     return n;

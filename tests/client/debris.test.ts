@@ -92,6 +92,29 @@ describe('DebrisSystem', () => {
     system.dispose();
   });
 
+  it('keeps at most the number of pieces it is allowed, taking the oldest away when the limit drops', () => {
+    const system = new DebrisSystem(mulberry32(5));
+    for (let i = 0; i < 10; i++) {
+      system.spawn(part({ position: { x: i, y: 5, z: 0 } }), { x: 0, y: 0, z: 0 });
+      system.update(0.05);
+    }
+    expect(system.active).toBe(10);
+    system.setLimit(4);
+    expect(system.active).toBe(4);
+    const xs = system.object.children.filter((c) => c.visible).map((c) => c.position.x);
+    expect(xs.every((x) => x > 4)).toBe(true); // the four newest are left: the ones thrown last
+    for (let i = 0; i < 6; i++) system.spawn(part({ position: { x: 100 + i, y: 5, z: 0 } }), { x: 0, y: 0, z: 0 });
+    expect(system.active).toBe(4); // new parts replace the oldest instead of adding
+    system.setLimit(0);
+    system.spawn(part(), { x: 0, y: 0, z: 0 });
+    expect(system.active).toBe(0);
+    system.setLimit(Number.NaN);
+    system.setLimit(1000);
+    for (let i = 0; i < DEBRIS.MAX + 5; i++) system.spawn(part(), { x: 0, y: 0, z: 0 });
+    expect(system.active).toBe(DEBRIS.MAX); // never more than the pool
+    system.dispose();
+  });
+
   it('survives absurd frame times and clears everything on request', () => {
     const system = new DebrisSystem(mulberry32(4));
     system.spawn(part(), { x: 0, y: 0, z: 0 });

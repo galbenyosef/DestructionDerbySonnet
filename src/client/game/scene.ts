@@ -5,7 +5,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { obstacleBoxes, wallSegments, type BoxSpec } from '../../shared/arena';
 import { ARENA } from '../../shared/constants';
-import { createComposerTarget } from './composer';
+import type { QualityProfile } from '../settings';
+import { COMPOSER_SAMPLES, createComposerTarget, needsComposer } from './composer';
 import { createDressing } from './dressing';
 import { needsResize } from './viewport';
 
@@ -15,12 +16,17 @@ export interface GameScene {
   readonly camera: THREE.PerspectiveCamera;
   /** Matches the drawing buffer to the canvas' CSS size; cheap when nothing changed. */
   resize(): void;
-  /** Draws the scene through the bloom pass (things brighter than the sky glow: lamps, headlights, sparks, fire). */
+  /** Draws the scene through the bloom pass (things brighter than the sky glow: lamps, headlights, sparks, fire), or straight to the screen on Low. */
   render(): void;
-  /** Turns the glow on or off (it is the most expensive part of a frame on a weak GPU). */
+  /**
+   * Switches the glow off for good (`?bloom=0`; it is the most expensive part of a frame on a weak GPU) or lets the graphics presets
+   * decide again. A preset can never turn on a glow that was switched off here.
+   */
   setBloom(enabled: boolean): void;
-  /** Samples per pixel of the buffer the scene is drawn into (0 = not multisampled); `window.__derby.debug()` reports it. */
+  /** Samples per pixel the scene is antialiased with (the composer's buffer, or the screen's own on Low); `window.__derby.debug()` reports it. */
   antialiasSamples(): number;
+  /** Applies a graphics preset: pixel ratio, shadows, glow and crowd. */
+  applyQuality(profile: QualityProfile): void;
   dispose(): void;
 }
 
@@ -62,7 +68,8 @@ function boxMesh(b: BoxSpec, material: THREE.Material, geometries: THREE.BufferG
 
 export function createGameScene(canvas: HTMLCanvasElement): GameScene {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  let pixelCap = 2; // the highest device pixel ratio the game draws at (a graphics preset lowers it)
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, pixelCap));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap; // PCFSoftShadowMap is deprecated in r186
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -138,7 +145,19 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
   // Bloom: the scene is drawn into a high-range buffer, the bright parts are blurred and added back, and the result is tone mapped.
   // The threshold is just above white, so only what is brighter than a lit surface glows (lamps, headlights, sparks, fire): the
   // name tags, which are plain white, stay crisp.
+  let bloomWanted = true; // what the graphics preset asks for
+  let bloomForcedOff = false; // what ?bloom=0 asks for
   const composer = new EffectComposer(renderer, createComposerTarget());
+  let msaa = COMPOSER_SAMPLES; // samples of the composer's buffers (a graphics preset sets it)
+  const setSamples = (samples: number): void => {
+    msaa = samples;
+    for (const target of [composer.renderTarget1, composer.renderTarget2]) {
+      if (target.samples !== samples) {
+        target.samples = samples;
+        target.dispose(); // the buffer is built again with the new sample count on the next frame
+      }
+    }
+  };
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.6, 1.05);
   composer.addPass(bloom);
@@ -148,7 +167,7 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
     if (w === 0 || h === 0) return;
-    const dpr = Math.min(window.devicePixelRatio, 2);
+    const dpr = Math.min(window.devicePixelRatio, pixelCap);
     if (needsResize(canvas.width, canvas.height, w, h, dpr)) {
       renderer.setPixelRatio(dpr);
       renderer.setSize(w, h, false);
@@ -166,12 +185,31 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
     resize,
     render: () => {
       renderer.info.reset();
-      composer.render();
+      if (needsComposer(bloom.enabled, msaa)) composer.render();
+      else renderer.render(scene, camera); // Low: no glow, no multisampled buffer, so the screen's own antialiasing applies
     },
     setBloom: (enabled) => {
-      bloom.enabled = enabled;
+      bloomForcedOff = !enabled;
+      bloom.enabled = enabled && bloomWanted;
     },
-    antialiasSamples: () => composer.renderTarget1.samples,
+    applyQuality: (profile) => {
+      pixelCap = profile.pixelRatio;
+      sun.castShadow = profile.shadows;
+      if (sun.shadow.mapSize.x !== profile.shadowMapSize) {
+        sun.shadow.mapSize.set(profile.shadowMapSize, profile.shadowMapSize);
+        sun.shadow.map?.dispose(); // the shadow map is rebuilt at the new size on the next frame
+        sun.shadow.map = null;
+      }
+      setSamples(profile.msaa);
+      bloomWanted = profile.bloom;
+      bloom.enabled = bloomWanted && !bloomForcedOff;
+      dressing.setCrowd(profile.crowd);
+    },
+    antialiasSamples: () => {
+      if (needsComposer(bloom.enabled, msaa)) return composer.renderTarget1.samples;
+      const gl = renderer.getContext();
+      return gl.getParameter(gl.SAMPLES) as number;
+    },
     dispose: () => {
       dressing.dispose();
       composer.dispose();

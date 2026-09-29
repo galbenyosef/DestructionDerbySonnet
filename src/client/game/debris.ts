@@ -62,7 +62,7 @@ export class DebrisSystem {
   readonly object = new THREE.Group();
   private readonly geometry = new THREE.BoxGeometry(1, 1, 1);
   private readonly pieces: Piece[] = [];
-  private cursor = 0;
+  private limit: number = DEBRIS.MAX;
 
   constructor(private readonly random: () => number = mulberry32(0xde0b715)) {
     for (let i = 0; i < DEBRIS.MAX; i++) {
@@ -85,9 +85,20 @@ export class DebrisSystem {
     return this.pieces.filter((p) => p.active).length;
   }
 
+  /** The most pieces alive at once (at most DEBRIS.MAX): lowering it takes the oldest pieces away at once. */
+  setLimit(limit: number): void {
+    this.limit = Math.max(0, Math.min(DEBRIS.MAX, Math.floor(Number.isFinite(limit) ? limit : DEBRIS.MAX)));
+    while (this.active > this.limit) {
+      const old = this.oldest();
+      old.active = false;
+      old.mesh.visible = false;
+    }
+  }
+
   /** Sends a part flying: it keeps the speed of the car it came off and is thrown away from it and upwards. */
   spawn(part: DetachedPart, carVelocity: Vec3): void {
-    const piece = this.pieces.find((p) => !p.active) ?? this.oldest();
+    if (this.limit === 0) return;
+    const piece = (this.active < this.limit ? this.pieces.find((p) => !p.active) : undefined) ?? this.oldest();
     const r = this.random;
     const away = 3 + 4 * r();
     const up = 2 + 3 * r();
@@ -137,8 +148,9 @@ export class DebrisSystem {
     this.object.removeFromParent();
   }
 
+  /** The active piece that has been flying longest. */
   private oldest(): Piece {
-    return this.pieces.reduce((a, b) => (b.body.age > a.body.age ? b : a));
+    return this.pieces.filter((p) => p.active).reduce((a, b) => (b.body.age > a.body.age ? b : a));
   }
 
   private place(piece: Piece): void {

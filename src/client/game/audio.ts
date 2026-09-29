@@ -41,6 +41,7 @@ export class AudioEngine {
   private noise: AudioBuffer | null = null;
   private readonly voices = new Map<number, Voice>();
   private silenced = false;
+  private level = 1;
 
   constructor(private readonly makeContext: () => AudioContext | null = browserContext) {}
 
@@ -55,7 +56,7 @@ export class AudioEngine {
       const created = this.context;
       if (!created) return;
       this.master = created.createGain();
-      this.master.gain.value = this.silenced ? 0 : MASTER_LEVEL;
+      this.master.gain.value = this.silenced ? 0 : MASTER_LEVEL * this.level;
       this.master.connect(created.destination);
       this.noise = created.createBuffer(1, Math.floor(created.sampleRate * 1), created.sampleRate);
       const samples = this.noise.getChannelData(0);
@@ -80,7 +81,17 @@ export class AudioEngine {
 
   setMuted(muted: boolean): void {
     this.silenced = muted;
-    if (this.master && this.context) this.master.gain.setTargetAtTime(muted ? 0 : MASTER_LEVEL, this.context.currentTime, 0.02);
+    this.applyLevel();
+  }
+
+  /** Sound level, 0 to 1 (the player's setting): scales the master level. */
+  setVolume(volume: number): void {
+    this.level = Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 1;
+    this.applyLevel();
+  }
+
+  private applyLevel(): void {
+    if (this.master && this.context) this.master.gain.setTargetAtTime(this.silenced ? 0 : MASTER_LEVEL * this.level, this.context.currentTime, 0.02);
   }
 
   /** Once per frame: keeps one engine per running car, tuned to its speed and throttle and placed by where it is. */

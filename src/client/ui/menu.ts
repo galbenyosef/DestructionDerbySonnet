@@ -1,4 +1,5 @@
 import { normalizeRoomCode, type JoinMode } from '../../shared/protocol';
+import { QUALITIES, type Quality, type Settings } from '../settings';
 
 export interface JoinChoice {
   name: string;
@@ -44,6 +45,9 @@ export interface MenuOptions {
   /** Pre-fills the room-code box (e.g. from an invite link). */
   initialCode?: string;
   error?: string;
+  /** The saved settings, shown in the menu, and what to do with a change (the menu applies nothing itself). */
+  settings?: Settings;
+  onSettings?(settings: Settings): void;
 }
 
 /** Renders the main menu into `root` and resolves once the player picks a way to join. */
@@ -61,6 +65,11 @@ export function showMenu(root: HTMLElement, options: MenuOptions = {}): Promise<
     <div class="row"><button id="m-quick" class="primary" type="button">Quick Play</button><button id="m-create" type="button">Create private room</button></div>
     <div class="row"><input id="m-code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Room code" /><button id="m-join" type="button">Join with code</button></div>
     <p class="error" id="m-error" role="alert"></p>
+    <div class="settings" role="group" aria-label="Settings">
+      <label>Graphics<select id="m-quality"></select></label>
+      <label>Volume<input id="m-volume" type="range" min="0" max="100" step="5" /></label>
+      <label class="check"><input id="m-sound" type="checkbox" />Sound</label>
+    </div>
     <p class="hint">W/S throttle · A/D steer · Space handbrake · H horn · M sound · Tab scoreboard · F3 network</p>`;
   root.append(menu);
 
@@ -72,6 +81,31 @@ export function showMenu(root: HTMLElement, options: MenuOptions = {}): Promise<
   nameInput.value = profile.name;
   if (options.initialCode) codeInput.value = options.initialCode.toUpperCase().slice(0, 4);
   if (options.error) errorEl.textContent = options.error;
+
+  const settingsBox = q<HTMLElement>('.settings');
+  settingsBox.hidden = !options.settings;
+  if (options.settings) {
+    let settings = options.settings;
+    const quality = q<HTMLSelectElement>('#m-quality');
+    for (const name of QUALITIES) {
+      const o = document.createElement('option');
+      o.value = name;
+      o.textContent = name[0]!.toUpperCase() + name.slice(1);
+      quality.append(o);
+    }
+    const volume = q<HTMLInputElement>('#m-volume');
+    const sound = q<HTMLInputElement>('#m-sound');
+    quality.value = settings.quality;
+    volume.value = String(Math.round(settings.volume * 100));
+    sound.checked = !settings.muted;
+    const changed = (): void => {
+      settings = { quality: quality.value as Quality, volume: Number(volume.value) / 100, muted: !sound.checked };
+      options.onSettings?.(settings);
+    };
+    quality.addEventListener('change', changed);
+    volume.addEventListener('input', changed);
+    sound.addEventListener('change', changed);
+  }
 
   let color = profile.color;
   for (const c of PALETTE) {

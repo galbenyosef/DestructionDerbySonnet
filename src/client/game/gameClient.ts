@@ -8,6 +8,7 @@ import { Connection } from '../net/connection';
 import { LagSocket, type LagOptions } from '../net/latency';
 import { formatNetStats } from '../net/netStats';
 import { ClientSession, type DrawPose, type NetMode } from '../net/session';
+import { AutoQuality, QUALITY, lowerQuality, nextQuality, type Quality, type Settings } from '../settings';
 import type { Hud } from '../ui/hud';
 import type { JoinChoice } from '../ui/menu';
 import { AudioEngine, type Listener } from './audio';
@@ -34,6 +35,9 @@ export interface GameClientOptions {
   net?: NetMode;
   /** Simulated network conditions (?lag=&jitter=&loss=). */
   lag?: LagOptions | null;
+  /** The player's settings, and what to do when the game changes them (the G key, an automatic step down, M). */
+  settings: Settings;
+  onSettings(settings: Settings): void;
 }
 
 /** Keys that switch the car the spectator camera follows (they steer when you drive, so they are free once you are out). */
@@ -64,6 +68,8 @@ export class GameClient {
   private readonly marks = new CanvasMarks();
   private readonly fx: FxDirector;
   private readonly drawingSize = new THREE.Vector2();
+  private readonly auto = new AutoQuality();
+  private settings: Settings;
   private readonly stepper = new FixedStepper(PHYSICS.DT);
   private readonly timer = new THREE.Timer();
   private readonly conn: Connection;
@@ -89,6 +95,7 @@ export class GameClient {
   private statsAt = 0;
 
   constructor(private readonly opts: GameClientOptions) {
+    this.settings = { ...opts.settings };
     this.session = new ClientSession(opts.net ?? 'predict', {
       onFallback: (reason) => {
         console.error('Prediction unavailable, falling back to interpolation:', reason);
@@ -103,6 +110,9 @@ export class GameClient {
       marks: { surface: this.marks, object: this.marks.mesh, upload: () => this.marks.upload() },
       view: (slot) => this.views.get(slot),
     });
+    this.audio.setVolume(this.settings.volume);
+    this.audio.setMuted(this.settings.muted);
+    this.applyQuality(this.settings.quality);
     const lag = opts.lag ?? null;
     this.conn = new Connection(
       opts.url,
@@ -270,6 +280,16 @@ export class GameClient {
 
   private readonly unlockAudio = (): void => this.audio.unlock();
 
+  /** Puts a graphics preset in force (scene, effects) and remembers it. */
+  private applyQuality(quality: Quality): void {
+    const profile = QUALITY[quality];
+    this.settings = { ...this.settings, quality };
+    this.opts.gs.applyQuality(profile);
+    this.fx.setDensity(profile.particles, profile.debris);
+    this.opts.onSettings(this.settings);
+    this.auto.reset(); // the new setting gets its own warm-up before it is judged
+  }
+
   /** Where sound is heard from: the car you drive or watch, or the camera when there is none. */
   private listener(): Listener {
     if (this.focus) return { pos: this.focus.pos, quat: this.focus.quat };
@@ -277,7 +297,7 @@ export class GameClient {
     return { pos: { x: c.position.x, y: c.position.y, z: c.position.z }, quat: { x: c.quaternion.x, y: c.quaternion.y, z: c.quaternion.z, w: c.quaternion.w } };
   }
 
-  /** F3 shows the network line, H sounds the horn, M mutes; while you are out, the cycle keys pick the next car to watch. */
+  /** F3 shows the network line, H sounds the horn, M mutes, G changes the graphics; while you are out, the cycle keys pick the next car to watch. */
   private onKey(code: string): void {
     this.audio.unlock(); // any key is a gesture the browser accepts
     if (code === 'KeyH') {
@@ -286,7 +306,14 @@ export class GameClient {
     }
     if (code === 'KeyM') {
       this.audio.setMuted(!this.audio.muted);
+      this.settings = { ...this.settings, muted: this.audio.muted };
+      this.opts.onSettings(this.settings);
       this.opts.hud.showNotice(this.audio.muted ? 'Sound off (M)' : 'Sound on (M)');
+      return;
+    }
+    if (code === 'KeyG') {
+      this.applyQuality(nextQuality(this.settings.quality));
+      this.opts.hud.showNotice(`Graphics: ${this.settings.quality} (G)`);
       return;
     }
     if (code === 'F3') {
@@ -356,6 +383,14 @@ export class GameClient {
       camera: cam,
       pixelScale: this.drawingSize.y / (2 * Math.tan((cam.fov * Math.PI) / 360)),
     });
+    if (this.auto.frame(dt)) {
+      // the frame rate has stayed low: step down one preset (going back up is the player's choice, with G)
+      const lower = lowerQuality(this.settings.quality);
+      if (lower) {
+        this.applyQuality(lower);
+        this.opts.hud.showNotice(`Graphics lowered to ${lower} to keep the frame rate up (G changes it)`);
+      }
+    }
     this.opts.gs.resize();
     this.opts.gs.render();
     this.updateStats();
@@ -377,7 +412,7 @@ export class GameClient {
       const net = predicted
         ? formatNetStats(predicted.stats.summary(now)) + (this.session.stalled ? ' · connection unstable' : '')
         : `snapshots ${this.session.snapshotsReceived} · buffer ${this.session.interpolator.size}`;
-      this.opts.hud.setStats(`${this.session.mode} · ping ${Math.round(this.conn.rttMs)} ms · ${this.fps} fps · ${this.frameMs.toFixed(1)} ms/frame · ${net}`);
+      this.opts.hud.setStats(`${this.session.mode} · ping ${Math.round(this.conn.rttMs)} ms · ${this.fps} fps · ${this.frameMs.toFixed(1)} ms/frame · graphics ${this.settings.quality} · ${net}`);
     }
   }
 
@@ -414,6 +449,7 @@ export class GameClient {
       stale: this.session.interpolator.stale,
       fps: this.fps,
       frameMs: this.frameMs,
+      quality: this.settings.quality,
       render: (() => {
         const info = this.opts.gs.renderer.info;
         return { calls: info.render.calls, triangles: info.render.triangles, geometries: info.memory.geometries, textures: info.memory.textures, samples: this.opts.gs.antialiasSamples() };

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { COMPOSER_SAMPLES, createComposerTarget } from '../../src/client/game/composer';
+import { COMPOSER_SAMPLES, createComposerTarget, needsComposer } from '../../src/client/game/composer';
 
 describe('createComposerTarget', () => {
   it('is a multisampled, high-range buffer: the scene is drawn into it, and the renderer\'s own antialiasing does not reach it', () => {
@@ -23,5 +23,14 @@ describe('createComposerTarget', () => {
     expect(createComposerTarget(2).samples).toBe(2);
     expect(createComposerTarget(0).samples).toBe(0);
     expect(createComposerTarget(Number.NaN).samples).toBe(COMPOSER_SAMPLES);
+  });
+});
+
+describe('needsComposer', () => {
+  it('sends the scene through the composer for the glow or for multisampling, and straight to the screen for neither', () => {
+    expect(needsComposer(true, 4)).toBe(true);
+    expect(needsComposer(true, 0)).toBe(true); // the glow alone still needs the buffer
+    expect(needsComposer(false, 2)).toBe(true); // so does antialiasing with the glow off (?bloom=0 on High)
+    expect(needsComposer(false, 0)).toBe(false); // Low: the screen's own antialiasing applies
   });
 });

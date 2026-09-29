@@ -7,6 +7,7 @@ import { startSandbox } from './game/sandbox';
 import { createGameScene, type GameScene } from './game/scene';
 import { serverUrl } from './net/connection';
 import { parseLagParams } from './net/latency';
+import { QUALITY, loadSettings, saveSettings, type Settings } from './settings';
 import { createHud } from './ui/hud';
 import { automaticChoice } from './ui/autoChoice';
 import { showMenu, type JoinChoice } from './ui/menu';
@@ -36,7 +37,16 @@ function startBackdrop(gs: GameScene): () => void {
   };
 }
 
-async function play(gs: GameScene, choice: JoinChoice, params: URLSearchParams): Promise<string | undefined> {
+/** localStorage where there is one (some browsers refuse it in private mode). */
+function browserStorage(): Storage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
+async function play(gs: GameScene, choice: JoinChoice, params: URLSearchParams, settings: Settings, remember: (s: Settings) => void): Promise<string | undefined> {
   let net: 'predict' | 'interp' = params.get('net') === 'interp' ? 'interp' : 'predict';
   if (net === 'predict') {
     try {
@@ -49,7 +59,7 @@ async function play(gs: GameScene, choice: JoinChoice, params: URLSearchParams):
   const lag = parseLagParams(params);
   const url = serverUrl(location, import.meta.env.VITE_WS_URL as string | undefined);
   return new Promise((resolve) => {
-    new GameClient({ gs, hud: createHud(ui), choice, url, onExit: resolve, net, lag }).start();
+    new GameClient({ gs, hud: createHud(ui), choice, url, onExit: resolve, net, lag, settings, onSettings: remember }).start();
   });
 }
 
@@ -68,17 +78,34 @@ async function boot(): Promise<void> {
     }
     hudEl.textContent = '';
     const gs = createGameScene(canvas);
-    gs.setBloom(params.get('bloom') !== '0'); // ?bloom=0 turns the glow off, to see what it costs on this machine
+    const store = browserStorage();
+    let settings = loadSettings(store);
+    const remember = (s: Settings): void => {
+      settings = s;
+      saveSettings(store, s);
+    };
+    gs.applyQuality(QUALITY[settings.quality]);
+    if (params.get('bloom') === '0') gs.setBloom(false); // ?bloom=0 turns the glow off, to see what it costs on this machine
     const initialCode = params.get('room') ?? undefined;
     let auto = automaticChoice(params);
     let error: string | undefined;
     for (;;) {
       const stopBackdrop = startBackdrop(gs);
-      const choice = auto ?? (await showMenu(ui, { initialCode, error }));
+      const choice =
+        auto ??
+        (await showMenu(ui, {
+          initialCode,
+          error,
+          settings,
+          onSettings: (s) => {
+            remember(s);
+            gs.applyQuality(QUALITY[s.quality]); // the arena behind the menu shows the difference
+          },
+        }));
       auto = null;
       stopBackdrop();
       ui.replaceChildren();
-      error = await play(gs, choice, params); // resolves when the game ends; loop back to the menu with the reason
+      error = await play(gs, choice, params, settings, remember); // resolves when the game ends; loop back to the menu with the reason
     }
   } catch (err) {
     console.error(err);
