@@ -59,10 +59,19 @@ ws.on('message', (data: RawData, isBinary: boolean) => {
   if (msg.t === 'welcome') {
     mySlot = msg.you;
     epoch = msg.epoch;
-    console.log(`joined ${msg.room.public ? 'public' : 'private'} room ${msg.room.code} as slot ${mySlot}`);
+    console.log(`joined ${msg.room.public ? 'public' : 'private'} room ${msg.room.code}${mySlot < 0 ? ' (watching until the next round)' : ` as slot ${mySlot}`}`);
   } else if (msg.t === 'roster') {
     epoch = msg.epoch;
-    console.log(`roster (epoch ${msg.epoch}): ${msg.players.map((p) => p.name).join(', ')}`);
+    mySlot = msg.you;
+    console.log(`round ${msg.round} (epoch ${msg.epoch}), you are ${mySlot < 0 ? 'watching' : `slot ${mySlot}`}: ${msg.players.map((p) => (p.bot ? `${p.name} [bot]` : p.name)).join(', ')}`);
+  } else if (msg.t === 'phase') {
+    console.log(`phase: ${msg.phase} (${Math.round(msg.remainingMs / 1000)} s)`);
+  } else if (msg.t === 'hit') {
+    if (msg.victim === mySlot || msg.attacker === mySlot) console.log(`hit: slot ${msg.attacker} -> slot ${msg.victim}, ${msg.dmg} HP on the ${msg.zone}`);
+  } else if (msg.t === 'ko') {
+    console.log(`out: slot ${msg.victim} (${msg.reason})${msg.killer >= 0 ? `, credited to slot ${msg.killer}` : ''}`);
+  } else if (msg.t === 'results') {
+    console.log(`results: ${msg.winner < 0 ? 'nobody won' : `slot ${msg.winner} won`} (${msg.reason})`);
   } else if (msg.t === 'error') {
     console.log(`server error: ${msg.message}`);
   }

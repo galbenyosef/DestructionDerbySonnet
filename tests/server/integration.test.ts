@@ -237,3 +237,51 @@ describe('originAllowed', () => {
     expect(originAllowed('not a url', 'localhost')).toBe(false);
   });
 });
+
+describe('whole rounds over the wire', () => {
+  const phases = (c: TestClient): string[] => c.messages.filter((m): m is PhaseMessage => m.t === 'phase').map((m) => m.phase);
+
+  it('plays a round between two humans to a winner, then starts the next round', async () => {
+    const a = await connect();
+    const b = await connect();
+    a.hello({ name: 'Ann' });
+    b.hello({ name: 'Bob' });
+    const ra = await a.waitFor(() => rosterWith(a, 2), 4000, 'roster for Ann');
+    const rb = await b.waitFor(() => rosterWith(b, 2), 4000, 'roster for Bob');
+    expect(ra.players.map((p) => p.name).sort()).toEqual(['Ann', 'Bob']);
+    await a.waitFor(() => goesLive(a), 3000, 'the round to go live');
+    expect(phases(a).slice(0, 2)).toEqual(['countdown', 'live']);
+
+    b.close(); // Bob leaves: Ann is the last car running
+    const ko = await a.waitFor(() => a.messages.find((m) => m.t === 'ko'), 3000, 'the ko');
+    expect(ko).toMatchObject({ t: 'ko', victim: rb.you, reason: 'disconnected' });
+    const results = await a.waitFor(() => a.messages.find((m) => m.t === 'results'), 3000, 'the results');
+    expect(results).toMatchObject({ t: 'results', round: 1, winner: ra.you, reason: 'last' });
+    expect(phases(a).at(-1)).toBe('results');
+
+    const next = await a.waitFor(() => a.messages.filter((m): m is RosterMessage => m.t === 'roster' && m.round === 2)[0], 4000, 'the next round');
+    expect(next.you).toBe(0);
+    expect(next.players.map((p) => p.name)).toEqual(['Ann']);
+    expect(next.epoch).toBeGreaterThan(ra.epoch);
+  });
+
+  it('fills a room with bots, and a round against them runs through countdown, live and results', async () => {
+    const withBots = createGameServer({ botFill: 4, seed: 5, rules: { countdownTicks: 20, liveTicks: 150, resultsTicks: 30 } });
+    try {
+      const p = await withBots.listen(0, '127.0.0.1');
+      const c = await TestClient.connect(p);
+      clients.push(c);
+      c.hello({ name: 'Solo' });
+      const roster = await c.waitFor(() => c.messages.find((m): m is RosterMessage => m.t === 'roster'), 4000, 'roster');
+      expect(roster.you).toBe(0);
+      expect(roster.players.map((q) => Boolean(q.bot))).toEqual([false, true, true, true]);
+      await c.waitFor(() => c.messages.find((m) => m.t === 'results'), 6000, 'results');
+      expect(phases(c).slice(0, 3)).toEqual(['countdown', 'live', 'results']);
+      const snap = c.snapshots.find((s) => s.epoch === roster.epoch && s.cars.length === 4);
+      expect(snap).toBeDefined();
+      await c.waitFor(() => c.messages.filter((m) => m.t === 'roster').length >= 2, 4000, 'a second round');
+    } finally {
+      await withBots.close();
+    }
+  });
+});
