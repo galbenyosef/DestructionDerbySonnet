@@ -91,6 +91,18 @@ describe('FxDirector hits reported by the server', () => {
     expect(t.fx.shake.level).toBeGreaterThan(0);
   });
 
+  it('does not jolt the camera of a player who is only watching (no car of their own) for a wall hit far away', () => {
+    const t = setup();
+    const at = (x: number) => [pose(0), pose(1, { pos: { x, y: 1, z: 0 } }), pose(2)];
+    const watching = (x: number) => ({ poses: at(x), mySlot: -1, listener }); // a wall has attacker -1, which is also what "no car" is
+    t.fx.onHit(hit({ victim: 1, attacker: -1, j: 25 }), watching(80));
+    const far = t.fx.shake.level;
+    expect(far).toBeLessThan(0.05);
+    t.fx.shake.reset();
+    t.fx.onHit(hit({ victim: 1, attacker: -1, j: 25, tick: 101 }), watching(4));
+    expect(t.fx.shake.level).toBeGreaterThan(far * 10); // the same hit close to the camera still shakes it
+  });
+
   it('takes a part off when a side has taken enough, and sends it flying', () => {
     const t = setup();
     t.fx.onHit(hit({ dmg: 6 }), t.frameArgs());
@@ -188,8 +200,9 @@ describe('FxDirector smoke, fire and wrecks', () => {
     expect(healthy.fx.particles.alive('fire')).toBe(0);
   });
 
-  it('burns a wreck for a few seconds, smoulders for a good while, and then stops', () => {
+  it('burns a wreck for a few seconds after it goes out, smoulders for a good while, and then stops', () => {
     const t = setup();
+    t.fx.onKo(ko({ reason: 'damage' }), t.frameArgs());
     t.setPoses([pose(0), pose(1, { alive: false, hp: 0 })]);
     t.frames(1);
     expect(t.fx.particles.alive('fire')).toBeGreaterThan(3);
@@ -199,6 +212,16 @@ describe('FxDirector smoke, fire and wrecks', () => {
     t.frames(FX.WRECK_SMOKE_SECONDS);
     t.frames(6); // longer than any puff lives
     expect(t.fx.particles.alive('smoke')).toBe(0);
+  });
+
+  it('lets a wreck that was already there when we arrived smoulder, without setting it on fire in front of a newcomer', () => {
+    const t = setup();
+    const nodes = t.ctxNodes();
+    t.setPoses([pose(0), pose(1, { alive: false, hp: 0 })]);
+    t.frames(2);
+    expect(t.fx.particles.alive('fire')).toBe(0);
+    expect(t.fx.particles.alive('smoke')).toBeGreaterThan(3);
+    expect(t.ctxNodes()).toBe(nodes); // and no thump
   });
 
   it('gives a car that goes out a burst of fire and smoke and a big thump, unless the player simply left', () => {

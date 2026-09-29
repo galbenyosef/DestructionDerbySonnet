@@ -5,6 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { obstacleBoxes, wallSegments, type BoxSpec } from '../../shared/arena';
 import { ARENA } from '../../shared/constants';
+import { createComposerTarget } from './composer';
 import { createDressing } from './dressing';
 import { needsResize } from './viewport';
 
@@ -18,6 +19,8 @@ export interface GameScene {
   render(): void;
   /** Turns the glow on or off (it is the most expensive part of a frame on a weak GPU). */
   setBloom(enabled: boolean): void;
+  /** Samples per pixel of the buffer the scene is drawn into (0 = not multisampled); `window.__derby.debug()` reports it. */
+  antialiasSamples(): number;
   dispose(): void;
 }
 
@@ -135,7 +138,7 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
   // Bloom: the scene is drawn into a high-range buffer, the bright parts are blurred and added back, and the result is tone mapped.
   // The threshold is just above white, so only what is brighter than a lit surface glows (lamps, headlights, sparks, fire): the
   // name tags, which are plain white, stay crisp.
-  const composer = new EffectComposer(renderer);
+  const composer = new EffectComposer(renderer, createComposerTarget());
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.6, 1.05);
   composer.addPass(bloom);
@@ -168,6 +171,7 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
     setBloom: (enabled) => {
       bloom.enabled = enabled;
     },
+    antialiasSamples: () => composer.renderTarget1.samples,
     dispose: () => {
       dressing.dispose();
       composer.dispose();

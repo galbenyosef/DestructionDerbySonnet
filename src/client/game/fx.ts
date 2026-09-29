@@ -116,7 +116,7 @@ export class FxDirector {
   /** The server says a car was hit: the dent and the parts always; sparks, sound and shake only if the local prediction has not made them already. */
   onHit(h: HitMessage, frame: Pick<FxFrame, 'poses' | 'mySlot' | 'listener'>): void {
     this.wear(h, true, frame.poses);
-    const mine = h.victim === frame.mySlot || h.attacker === frame.mySlot;
+    const mine = frame.mySlot >= 0 && (h.victim === frame.mySlot || h.attacker === frame.mySlot); // -1 is "no car" for a watcher, and "a wall" as an attacker
     const other = h.victim === frame.mySlot ? h.attacker : h.victim; // what the local car ran into: another car, or -1 for a wall
     const covered = mine && this.now - (this.localImpactAt.get(other) ?? -1e9) < FX.LOCAL_COVERS;
     if (covered) return;
@@ -161,7 +161,7 @@ export class FxDirector {
       const speed = vlen(p.linvel);
       engines.push({ slot: p.slot, pos: p.pos, speed, throttle: p.throttle, alive: p.alive });
       if (!p.alive) {
-        if (!this.wentOutAt.has(p.slot)) this.wentOutAt.set(p.slot, f.now); // a wreck we met already burnt out
+        if (!this.wentOutAt.has(p.slot)) this.wentOutAt.set(p.slot, f.now - FX.WRECK_FIRE_SECONDS); // a wreck we met has already burnt: it only smoulders
         this.burn(p, dt, f.now);
         continue;
       }

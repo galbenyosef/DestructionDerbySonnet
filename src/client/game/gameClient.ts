@@ -416,7 +416,7 @@ export class GameClient {
       frameMs: this.frameMs,
       render: (() => {
         const info = this.opts.gs.renderer.info;
-        return { calls: info.render.calls, triangles: info.render.triangles, geometries: info.memory.geometries, textures: info.memory.textures };
+        return { calls: info.render.calls, triangles: info.render.triangles, geometries: info.memory.geometries, textures: info.memory.textures, samples: this.opts.gs.antialiasSamples() };
       })(),
       poses: this.lastPoses.map((p) => ({
         slot: p.slot,
