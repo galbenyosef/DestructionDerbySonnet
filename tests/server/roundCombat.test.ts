@@ -209,6 +209,38 @@ describe('RoundState.step: eliminations', () => {
     expect(kos).toMatchObject([{ victim: 0, reason: 'bounds' }]);
   });
 
+  it('replaces a car whose body went to NaN with a finite wreck, so no snapshot of the round can carry NaN', () => {
+    const allFinite = (st: CarState): boolean =>
+      [st.pos.x, st.pos.y, st.pos.z, st.quat.x, st.quat.y, st.quat.z, st.quat.w, st.linvel.x, st.linvel.y, st.linvel.z, st.angvel.x, st.angvel.y, st.angvel.z].every(
+        Number.isFinite,
+      );
+    const { sim, kos, run } = setup([0, 1], (s) => {
+      s.setState(0, still(-20, 0));
+      s.setState(1, still(20, 0, Math.PI, 3));
+    });
+    sim.setState(0, { ...still(0, 0), pos: { x: Number.NaN, y: 1.07, z: 0 } });
+    expect(allFinite(sim.getState(0))).toBe(false);
+    run(1);
+    expect(kos).toMatchObject([{ victim: 0, killer: -1, reason: 'bounds' }]);
+    expect(allFinite(sim.getState(0))).toBe(true); // replaced within the same tick, before the snapshot is built
+    run(300);
+    expect([0, 1].every((slot) => allFinite(sim.getState(slot)))).toBe(true);
+  });
+
+  it('also replaces a wreck whose body goes to NaN later', () => {
+    const { sim, state, run } = setup([0, 1], (s) => {
+      s.setState(0, still(-20, 0));
+      s.setState(1, still(20, 0));
+    });
+    state.eliminate(0, 'disconnected', 0);
+    run(2);
+    sim.setState(0, { ...still(0, 0), pos: { x: 0, y: Number.POSITIVE_INFINITY, z: 0 } });
+    run(1);
+    const st = sim.getState(0);
+    expect(Object.values(st.pos).every(Number.isFinite)).toBe(true);
+    expect(state.isAlive(0)).toBe(false);
+  });
+
   it('drains a car that avoids every fight, and eliminates it when the HP is gone', () => {
     const { state, kos } = setup([0]);
     // drive the anti-stall rule directly: a car that keeps moving but is never in a hit

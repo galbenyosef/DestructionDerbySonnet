@@ -1,8 +1,10 @@
+import { spawnPose } from '../shared/arena';
 import { COMBAT } from '../shared/constants';
 import type { HitMessage, KoMessage, KoReason } from '../shared/protocol';
 import type { Simulation } from '../shared/sim';
+import type { CarState } from '../shared/types';
 import { AttackLog, HitTracker } from './combat';
-import { CarWatch } from './rules';
+import { CarWatch, isFiniteState } from './rules';
 
 /** How one car is doing in the running round. */
 export interface CarStatus {
@@ -18,6 +20,14 @@ export interface CarStatus {
 export interface StepEvents {
   hits: HitMessage[];
   kos: KoMessage[];
+}
+
+const ZERO = { x: 0, y: 0, z: 0 } as const;
+
+/** Where a car stands and how it is at the start of the round: a finite place to leave a broken body. */
+function spawnState(sim: Simulation, slot: number): CarState {
+  const pose = spawnPose(sim.slots.indexOf(slot), sim.slots.length);
+  return { pos: pose.pos, quat: pose.quat, linvel: ZERO, angvel: ZERO };
 }
 
 const round1 = (v: number): number => Math.round(v * 10) / 10;
@@ -123,12 +133,19 @@ export class RoundState {
       }
     }
     for (const car of this.status.values()) {
+      let state = sim.getState(car.slot);
+      const broken = !isFiniteState(state);
+      if (broken) {
+        // Rapier turned the body into NaN: leave a finite wreck at its spawn point, or every snapshot of the round would carry
+        // NaN and the clients (which drop such a snapshot whole) would freeze until the next round.
+        sim.setState(car.slot, spawnState(sim, car.slot));
+        state = sim.getState(car.slot);
+      }
       if (!car.alive) continue;
       const watch = this.watches.get(car.slot)!;
-      const result = watch.update(sim.getState(car.slot), involved.has(car.slot));
+      const result = watch.update(state, involved.has(car.slot));
       if (result.drain > 0) car.hp -= result.drain;
-      const reason: KoReason | null =
-        car.hp <= 1e-9 ? 'stall' : result.fault === 'flipped' ? 'flipped' : result.fault === 'stuck' ? 'stuck' : result.fault === 'bounds' ? 'bounds' : null;
+      const reason: KoReason | null = broken ? 'bounds' : car.hp <= 1e-9 ? 'stall' : result.fault;
       if (reason) {
         const ko = this.eliminate(car.slot, reason, tick);
         if (ko) events.kos.push(ko);

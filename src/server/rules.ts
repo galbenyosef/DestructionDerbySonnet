@@ -12,7 +12,12 @@ export interface WatchResult {
 }
 
 const UP = { x: 0, y: 1, z: 0 };
-const finite = (v: number): boolean => Number.isFinite(v);
+
+/** False when any number of a body's state is NaN or infinite (Rapier can produce one from a degenerate contact). */
+export function isFiniteState(s: CarState): boolean {
+  const { pos, quat, linvel, angvel } = s;
+  return [pos.x, pos.y, pos.z, quat.x, quat.y, quat.z, quat.w, linvel.x, linvel.y, linvel.z, angvel.x, angvel.y, angvel.z].every(Number.isFinite);
+}
 
 /**
  * Watches one car during a live round for the elimination rules that come from the car's own state (flipped for 3 s,
@@ -27,8 +32,7 @@ export class CarWatch {
   /** `inHit` is true on ticks where a hit closed for this car, as victim or as attacker. */
   update(state: CarState, inHit: boolean): WatchResult {
     const { pos, quat, linvel } = state;
-    const numbers = [pos.x, pos.y, pos.z, quat.x, quat.y, quat.z, quat.w, linvel.x, linvel.y, linvel.z];
-    if (!numbers.every(finite)) return { fault: 'bounds', drain: 0 }; // a broken body must not stay in the round
+    if (!isFiniteState(state)) return { fault: 'bounds', drain: 0 }; // a broken body must not stay in the round
     if (Math.hypot(pos.x, pos.z) > ARENA.RADIUS + COMBAT.BOUNDS_MARGIN || pos.y < COMBAT.BOUNDS_MIN_Y) {
       return { fault: 'bounds', drain: 0 };
     }

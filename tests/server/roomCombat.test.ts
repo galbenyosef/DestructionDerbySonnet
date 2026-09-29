@@ -144,6 +144,19 @@ describe('Room combat', () => {
     expect(messages(a.socket, 'results')[0]).toMatchObject({ winner: -1, reason: 'draw' });
   });
 
+  it('never sends a snapshot with a NaN car: a body Rapier breaks is replaced by a finite wreck in the same tick', () => {
+    const { room, a } = duel();
+    serverSim(room).setState(1, { ...car(0, 0), pos: { x: Number.NaN, y: 1.07, z: 0 } });
+    const before = snapshots(a.socket).length;
+    steps(room, 30);
+    const fresh = snapshots(a.socket).slice(before);
+    expect(fresh.length).toBeGreaterThan(10);
+    for (const snap of fresh) {
+      for (const c of snap.cars) expect([c.state.pos.x, c.state.pos.y, c.state.pos.z, c.state.linvel.x, c.state.linvel.y, c.state.linvel.z].every(Number.isFinite)).toBe(true);
+    }
+    expect(messages(a.socket, 'ko')).toMatchObject([{ victim: 1, killer: -1, reason: 'bounds' }]);
+  });
+
   it('does not hurt anybody outside the live phase', () => {
     const { room } = makeRoom({ rules: { countdownTicks: 200 } });
     const a = join(room);
