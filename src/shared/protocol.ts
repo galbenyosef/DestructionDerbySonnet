@@ -219,7 +219,7 @@ const ROUND_ENDS: readonly unknown[] = ['last', 'timeout', 'no_humans', 'draw'];
 const isPhaseMessage = (v: unknown): v is PhaseMessage =>
   isObj(v) && v.t === 'phase' && PHASES.includes(v.phase) && isInt(v.round) && isNum(v.remainingMs) && v.remainingMs >= 0;
 const isHitMessage = (v: unknown): v is HitMessage =>
-  isObj(v) && v.t === 'hit' && isInt(v.tick) && isSlot(v.victim) && isSlotOrNone(v.attacker) && isNum(v.dmg) && v.dmg >= 0 && isNum(v.hp) &&
+  isObj(v) && v.t === 'hit' && isInt(v.tick) && isSlot(v.victim) && isSlotOrNone(v.attacker) && isNum(v.dmg) && v.dmg >= 0 && isNum(v.hp) && v.hp >= 0 &&
   ZONES.includes(v.zone) && isNum(v.j) && v.j >= 0 && Array.isArray(v.p) && v.p.length === 3 && v.p.every(isNum);
 
 /** Defensive parser used by the client (and test clients) for server text frames. */

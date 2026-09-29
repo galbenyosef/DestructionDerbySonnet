@@ -113,6 +113,7 @@ describe('multiplayer flow', () => {
     await a.waitFor(() => a.welcome());
     await b.waitFor(() => b.welcome());
     await b.waitFor(() => rosterWith(b, 2), 4000, 'both seated');
+    await b.waitFor(() => goesLive(b), 4000, 'the round to go live'); // a player who leaves during the countdown is not eliminated: the countdown starts over
     a.close();
     await b.waitFor(() => b.messages.find((m) => m.t === 'ko' && m.reason === 'disconnected'), 4000, 'A to be eliminated');
     expect(app.lobby.playerCount).toBe(1);
@@ -275,14 +276,15 @@ describe('whole rounds over the wire', () => {
       const c = await TestClient.connect(p);
       clients.push(c);
       c.hello({ name: 'Solo' });
-      const roster = await c.waitFor(() => c.messages.find((m): m is RosterMessage => m.t === 'roster'), 4000, 'roster');
+      // generous budgets: the whole suite runs beside other CPU-heavy suites, and the round itself takes about three seconds
+      const roster = await c.waitFor(() => c.messages.find((m): m is RosterMessage => m.t === 'roster'), 10_000, 'roster');
       expect(roster.you).toBe(0);
       expect(roster.players.map((q) => Boolean(q.bot))).toEqual([false, true, true, true]);
-      await c.waitFor(() => c.messages.find((m) => m.t === 'results'), 6000, 'results');
+      await c.waitFor(() => c.messages.find((m) => m.t === 'results'), 20_000, 'results');
       expect(phases(c).slice(0, 3)).toEqual(['countdown', 'live', 'results']);
       const snap = c.snapshots.find((s) => s.epoch === roster.epoch && s.cars.length === 4);
       expect(snap).toBeDefined();
-      await c.waitFor(() => c.messages.filter((m) => m.t === 'roster').length >= 2, 4000, 'a second round');
+      await c.waitFor(() => c.messages.filter((m) => m.t === 'roster').length >= 2, 10_000, 'a second round');
     } finally {
       await withBots.close();
     }

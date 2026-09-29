@@ -130,7 +130,7 @@ describe('Lobby private rooms', () => {
     const created = ok(lobby.createPrivate(newPlayer()));
     const joined = ok(lobby.join(newPlayer(), created.room.code));
     expect(joined.room).toBe(created.room);
-    expect(joined.slot).toBe(-1); // a car comes with the next roster
+    expect(joined.room.greeting(joined.room.seated()[1]!).you).toBe(-1); // a car comes with the next roster
     expect(lobby.join(newPlayer(), 'ZZZZ')).toEqual({ ok: false, code: 'room_not_found' });
     for (let i = 2; i < ARENA.MAX_CARS; i++) ok(lobby.join(newPlayer(), created.room.code));
     expect(lobby.join(newPlayer(), created.room.code)).toEqual({ ok: false, code: 'room_full' });

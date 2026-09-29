@@ -130,14 +130,11 @@ describe('HitTracker', () => {
     expect(mixed.find((h) => h.victim === 1)!.zone).toBe('left'); // most of the impulse came in on the left
   });
 
-  it('reports every hit in a fixed order and forgets open windows on reset', () => {
+  it('reports every hit in a fixed order', () => {
     const tracker = new HitTracker();
     tracker.update(0, [carCar(9_000, 2, 5), carCar(9_000, 0, 1)]);
     const hits = tracker.update(5, []);
     expect(hits.map((h) => [h.victim, h.attacker])).toEqual([[0, 1], [1, 0], [2, 5], [5, 2]]);
-    tracker.update(6, [carCar(9_000)]);
-    tracker.reset();
-    expect(tracker.update(20, [])).toEqual([]);
   });
 });
 
@@ -160,14 +157,12 @@ describe('AttackLog', () => {
     expect(log.credit(1, COMBAT.ASSIST_TICKS + 1)).toEqual({ killer: -1, assists: [] });
   });
 
-  it('keeps the most recent hit per attacker and can be reset', () => {
+  it('keeps the most recent hit per attacker', () => {
     const log = new AttackLog();
     log.record(1, 2, 0);
     log.record(1, 3, 100);
     log.record(1, 2, 200);
     expect(log.credit(1, 210)).toEqual({ killer: 2, assists: [3] });
-    log.reset();
-    expect(log.credit(1, 210).killer).toBe(-1);
   });
 });
 

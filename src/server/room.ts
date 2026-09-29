@@ -46,7 +46,6 @@ export interface RoomOptions {
 
 /** A human or a bot taking part in the room. Running totals live here; hit points and the like live in RoundState. */
 interface Participant {
-  key: string;
   player: Player | null;
   bot: boolean;
   name: string;
@@ -81,6 +80,8 @@ export class Room {
   private state: RoundState | null = null;
   private folded = false;
   private restartPending = false;
+  /** Set when a player who had a car left during the countdown: the countdown starts over without them. */
+  private seatedLeft = false;
   private restarts = 0;
   private ticks = 0;
   private phaseTicks = 0;
@@ -150,7 +151,7 @@ export class Room {
   /** Adds a human. Returns false when the room is full or closed. They get a car when the next round starts. */
   addPlayer(player: Player): boolean {
     if (this.disposed || this.isFull) return false;
-    this.participants.push({ key: `p${player.id}`, player, bot: false, name: player.name, color: player.color, slot: -1, score: 0, kills: 0 });
+    this.participants.push({ player, bot: false, name: player.name, color: player.color, slot: -1, score: 0, kills: 0 });
     player.slot = -1;
     player.room = this;
     player.resetInputState();
@@ -163,14 +164,23 @@ export class Room {
     const index = this.participants.findIndex((p) => p.player === player);
     if (index < 0) return;
     const leaving = this.participants[index]!;
-    if (this.state && leaving.slot >= 0 && this.phase !== 'results') {
-      const ko = this.state.eliminate(leaving.slot, 'disconnected', this.simTick);
-      if (ko) {
-        this.broadcast(ko, player);
-        this.scoresDirty = true;
+    const hadCar = leaving.slot >= 0;
+    if (this.state && hadCar && this.phase !== 'results') {
+      if (this.phase === 'countdown' && this.restarts < ROUND.MAX_COUNTDOWN_RESTARTS) {
+        // nobody has driven yet: start the countdown over without them, instead of leaving a dead car at a spawn point for the whole round
+        this.restartPending = true;
+        this.seatedLeft = true;
+      } else {
+        const ko = this.state.eliminate(leaving.slot, 'disconnected', this.simTick);
+        if (ko) {
+          this.broadcast(ko, player);
+          this.scoresDirty = true;
+        }
       }
     }
     this.participants.splice(index, 1);
+    // a newcomer who leaves again before the world was rebuilt has not cost anyone a restart
+    if (!hadCar && this.restartPending && !this.seatedLeft && !this.humans().some((p) => p.slot < 0)) this.restartPending = false;
     player.slot = -1;
     player.room = null;
     if (this.humans().length === 0) this.onEmpty(this);
@@ -182,6 +192,7 @@ export class Room {
     this.ticks++;
     const humans = this.humans();
     for (const p of humans) if (p.player!.ticksSinceInput > NET.INACTIVE_KICK_TICKS) p.player!.close(4001, 'inactive');
+    if (this.sim && humans.length === 0) return; // an empty room stops (whoever owns it will dispose of it); it never plays rounds against itself
     if (!this.sim) {
       if (humans.length === 0) return;
       this.startRound(false);
@@ -229,6 +240,7 @@ export class Room {
   private startRound(restart: boolean): void {
     this.sim?.dispose();
     this.restartPending = false;
+    this.seatedLeft = false;
     this.restarts = restart ? this.restarts + 1 : 0;
     if (!restart) this.round++;
     this.epoch = (this.epoch + 1) & 0xff;
@@ -265,7 +277,6 @@ export class Room {
   private newBot(): Participant {
     const n = this.botsMade++;
     return {
-      key: `b${n}`,
       player: null,
       bot: true,
       name: BOT_NAMES[n % BOT_NAMES.length]!,

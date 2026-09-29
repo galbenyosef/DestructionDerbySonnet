@@ -227,6 +227,7 @@ describe('parseServerMessage', () => {
       JSON.stringify({ ...welcome, phase: { ...phase, phase: 'warmup' } }),
       JSON.stringify({ ...welcome, phase: undefined }),
       JSON.stringify({ ...welcome, scores: [{ slot: 9, score: 1, kills: 0 }] }),
+      JSON.stringify({ ...hit, hp: -3 }),
       JSON.stringify({ ...welcome, players: [{ slot: 1, name: 'x', color: 1, bot: 'yes' }] }),
       JSON.stringify({ ...welcome, dents: undefined }), // a welcome always carries the hit log, empty or not
       JSON.stringify({ ...welcome, dents: [{ ...hit, zone: 'roof' }] }),

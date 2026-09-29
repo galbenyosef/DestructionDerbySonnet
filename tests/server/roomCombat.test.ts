@@ -2,6 +2,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { COMBAT, NET } from '../../src/shared/constants';
 import { quatFromYaw } from '../../src/shared/math';
 import { initPhysics } from '../../src/shared/physics';
+import type { KoMessage } from '../../src/shared/protocol';
 import type { CarState } from '../../src/shared/types';
 import type { Room } from '../../src/server/room';
 import type { RoundState } from '../../src/server/round';
@@ -64,6 +65,21 @@ describe('Room combat', () => {
     roundState(room).eliminate(0, 'flipped', 10);
     steps(room, 4);
     expect(snapshots(a.socket).at(-1)!.cars.find((c) => c.slot === 0)!.hp).toBe(0);
+  });
+
+  it('sends the events of a tick before that tick\'s snapshot, so no snapshot shows what the client has not been told yet', () => {
+    const { room, a } = duel();
+    while (room.simTick % NET.SNAPSHOT_EVERY !== NET.SNAPSHOT_EVERY - 1) room.step();
+    const before = a.socket.sent.length;
+    roundState(room).status.get(1)!.hp = 0; // a stall elimination on the next step, which is a snapshot tick
+    room.step();
+    const added = a.socket.sent.slice(before);
+    const ko = added.findIndex((d) => typeof d === 'string' && (JSON.parse(d) as { t: string }).t === 'ko');
+    const snapshot = added.findIndex((d) => typeof d !== 'string');
+    expect(ko).toBeGreaterThanOrEqual(0);
+    expect(snapshot).toBeGreaterThanOrEqual(0);
+    expect(ko).toBeLessThan(snapshot);
+    expect(snapshots(a.socket).at(-1)!.tick).toBe((messages(a.socket, 'ko').at(-1) as unknown as KoMessage).tick);
   });
 
   it('scores 1 point per HP of damage dealt and shares the running scores', () => {
@@ -171,6 +187,20 @@ describe('Room combat', () => {
       for (const c of snap.cars) expect([c.state.pos.x, c.state.pos.y, c.state.pos.z, c.state.linvel.x, c.state.linvel.y, c.state.linvel.z].every(Number.isFinite)).toBe(true);
     }
     expect(messages(a.socket, 'ko')).toMatchObject([{ victim: 1, killer: -1, reason: 'bounds' }]);
+  });
+
+  it('greets a player who joins during the results with the totals the results announced, not with the round counted twice', () => {
+    const { room, a } = duel({ rules: { resultsTicks: 600 } });
+    headOn(room);
+    steps(room, 90);
+    roundState(room).status.get(1)!.hp = 0;
+    steps(room, 2);
+    expect(room.phase).toBe('results');
+    const rows = (messages(a.socket, 'results').at(-1)!.rows as Array<{ slot: number; score: number }>).map((r) => [r.slot, r.score]);
+    const late = join(room, 'Cy');
+    const greeted = room.greeting(late.player).scores.map((s) => [s.slot, s.score]);
+    expect(greeted).toEqual(rows);
+    expect(rows[0]![1]).toBeGreaterThan(100); // the damage dealt plus the win, once
   });
 
   it('greets a newcomer with the hits of the round so far, oldest first', () => {

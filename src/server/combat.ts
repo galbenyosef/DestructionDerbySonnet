@@ -66,11 +66,6 @@ export class HitTracker {
     return hits.sort((p, q) => p.victim - q.victim || p.attacker - q.attacker || p.tick - q.tick);
   }
 
-  /** Forgets every open window (the world was rebuilt). */
-  reset(): void {
-    this.windows.clear();
-  }
-
   private add(tick: number, victim: number, attacker: number, impulse: number, point: Vec3, hits: Hit[], isRunning: (slot: number) => boolean): void {
     const key = victim * 16 + attacker + 1;
     const impact = impulse >= COMBAT.IMPACT_IMPULSE;
@@ -126,9 +121,5 @@ export class AttackLog {
       .sort((p, q) => q[1] - p[1] || p[0] - q[0]);
     if (recent.length === 0) return { killer: -1, assists: [] };
     return { killer: recent[0]![0], assists: recent.slice(1).map(([slot]) => slot).sort((p, q) => p - q) };
-  }
-
-  reset(): void {
-    this.lastHit.clear();
   }
 }

@@ -4,7 +4,7 @@ import type { ErrorCode } from '../shared/protocol';
 import type { Player } from './player';
 import { Room, type RoomOptions } from './room';
 
-export type JoinResult = { ok: true; room: Room; slot: number } | { ok: false; code: ErrorCode };
+export type JoinResult = { ok: true; room: Room } | { ok: false; code: ErrorCode };
 
 export interface LobbyOptions {
   maxRooms: number;
@@ -90,7 +90,7 @@ export class Lobby {
   }
 
   private seat(room: Room, player: Player): JoinResult {
-    return room.addPlayer(player) ? { ok: true, room, slot: player.slot } : { ok: false, code: 'room_full' };
+    return room.addPlayer(player) ? { ok: true, room } : { ok: false, code: 'room_full' };
   }
 
   private createRoom(isPublic: boolean): Room {

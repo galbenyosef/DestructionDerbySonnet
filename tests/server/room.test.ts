@@ -200,17 +200,74 @@ describe('Room rounds', () => {
     expect(snapshots(late.socket).at(-1)!.ackSeq).toBeGreaterThanOrEqual(38);
   });
 
-  it('turns a player who leaves during the countdown into a wreck for the whole round', () => {
+  it('starts the countdown over without a player who leaves during it, instead of leaving their car behind', () => {
     const { room } = makeRoom({ rules: { countdownTicks: 200 } });
     const a = join(room, 'Ann');
     const b = join(room, 'Bob');
-    join(room, 'Cy');
+    const c = join(room, 'Cy');
     steps(room, 5);
     room.removePlayer(b.player);
-    expect(messages(a.socket, 'ko')).toMatchObject([{ victim: 1, reason: 'disconnected' }]);
+    expect(messages(a.socket, 'ko')).toHaveLength(0); // nobody has driven yet: nobody is eliminated
+    steps(room, 1);
+    expect(room.epoch).toBe(2);
+    expect(room.round).toBe(1); // the same round, started over
+    expect(messages(a.socket, 'roster').at(-1)).toMatchObject({ epoch: 2, you: 0 });
+    expect(messages(c.socket, 'roster').at(-1)).toMatchObject({ epoch: 2, you: 1 });
+    expect(room.playerInfos().map((p) => p.name)).toEqual(['Ann', 'Cy']);
     steps(room, 400);
     expect(room.phase).toBe('live'); // Ann and Cy carry on
-    expect(snapshots(a.socket).at(-1)!.cars.map((c) => c.slot)).toEqual([0, 1, 2]);
+    expect(snapshots(a.socket).at(-1)!.cars.map((car) => car.slot)).toEqual([0, 1]);
+  });
+
+  it('turns a player who leaves once the countdown has restarted too often into a wreck, so nobody can hold a room back by joining and leaving', () => {
+    const { room } = makeRoom({ rules: { countdownTicks: 200 } });
+    const a = join(room, 'Ann');
+    join(room, 'Bob');
+    steps(room, 2);
+    for (let i = 0; i < ROUND.MAX_COUNTDOWN_RESTARTS; i++) {
+      const visitor = join(room, 'Vic');
+      steps(room, 2);
+      room.removePlayer(visitor.player);
+    }
+    expect(room.epoch).toBe(1 + ROUND.MAX_COUNTDOWN_RESTARTS);
+    expect(messages(a.socket, 'ko').at(-1)).toMatchObject({ victim: 2, reason: 'disconnected' }); // the last visitor's car stays
+    steps(room, 3);
+    expect(room.epoch).toBe(1 + ROUND.MAX_COUNTDOWN_RESTARTS); // and the countdown keeps running
+  });
+
+  it('does not restart the countdown for somebody who joins and leaves again before it could', () => {
+    const { room } = makeRoom({ rules: { countdownTicks: 100 } });
+    const a = join(room, 'Ann');
+    steps(room, 10);
+    const visitor = join(room, 'Vic');
+    room.removePlayer(visitor.player);
+    steps(room, 5);
+    expect(room.epoch).toBe(1);
+    expect(messages(a.socket, 'roster')).toHaveLength(1);
+  });
+
+  it('still restarts the countdown when a player with a car leaves in the same tick as a newcomer who comes and goes', () => {
+    const { room } = makeRoom({ rules: { countdownTicks: 100 } });
+    join(room, 'Ann');
+    const b = join(room, 'Bob');
+    steps(room, 10);
+    room.removePlayer(b.player);
+    const visitor = join(room, 'Vic');
+    room.removePlayer(visitor.player);
+    steps(room, 1);
+    expect(room.epoch).toBe(2);
+    expect(room.playerInfos().map((p) => p.name)).toEqual(['Ann']);
+  });
+
+  it('stops stepping once its last human has left, instead of playing rounds against its bots until somebody disposes of it', () => {
+    const { room, emptied } = makeRoom({ botFill: 4 });
+    const a = join(room, 'Ann');
+    steps(room, 5);
+    const tick = room.simTick;
+    room.removePlayer(a.player);
+    expect(emptied).toEqual([room]);
+    steps(room, 30);
+    expect(room.simTick).toBe(tick);
   });
 
   it('gives a player who joins while the results are showing a car in the next round', () => {
