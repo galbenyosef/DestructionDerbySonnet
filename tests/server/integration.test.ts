@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { NET } from '../../src/shared/constants';
 import { initPhysics } from '../../src/shared/physics';
-import { encodeInput, type RosterMessage } from '../../src/shared/protocol';
+import { encodeInput, type PhaseMessage, type RosterMessage } from '../../src/shared/protocol';
 import { createGameServer, originAllowed, type GameServer } from '../../src/server/app';
 import { TestClient } from '../helpers/testClient';
 
@@ -18,12 +18,13 @@ const connect = async (headers?: Record<string, string>): Promise<TestClient> =>
 };
 const rosterWith = (c: TestClient, n: number) =>
   c.messages.find((m): m is RosterMessage => m.t === 'roster' && m.players.length === n);
+const goesLive = (c: TestClient) => c.messages.find((m): m is PhaseMessage => m.t === 'phase' && m.phase === 'live');
 
 beforeAll(async () => {
   await initPhysics();
 });
 beforeEach(async () => {
-  app = createGameServer({ maxRooms: 6 });
+  app = createGameServer({ maxRooms: 6, botFill: 0, rules: { countdownTicks: 30, liveTicks: 6000, resultsTicks: 60 } });
   port = await app.listen(0, '127.0.0.1');
 });
 afterEach(async () => {
@@ -40,10 +41,13 @@ describe('multiplayer flow', () => {
     const wa = await a.waitFor(() => a.welcome(), 3000, 'welcome for A');
     const wb = await b.waitFor(() => b.welcome(), 3000, 'welcome for B');
     expect(wa.room.code).toBe(wb.room.code);
-    expect(new Set([wa.you, wb.you])).toEqual(new Set([0, 1]));
 
+    // both joined during the first countdown, so both get a car in the same round
     const roster = await b.waitFor(() => rosterWith(b, 2), 4000, 'roster with both players');
-    await a.waitFor(() => rosterWith(a, 2), 4000, 'roster for A');
+    const rosterA = await a.waitFor(() => rosterWith(a, 2), 4000, 'roster for A');
+    expect(new Set([rosterA.you, roster.you])).toEqual(new Set([0, 1]));
+    expect(rosterA.epoch).toBe(roster.epoch);
+    await b.waitFor(() => goesLive(b), 3000, 'the round to go live');
     await b.waitFor(() => b.snapshots.find((s) => s.epoch === roster.epoch && s.cars.length === 2), 3000, 'first snapshot');
 
     const n0 = b.snapshots.length;
@@ -55,8 +59,8 @@ describe('multiplayer flow', () => {
     expect(rate).toBeLessThan(40);
 
     const inEpoch = b.snapshots.filter((s) => s.epoch === roster.epoch);
-    const start = inEpoch[0]!.cars.find((c) => c.slot === wa.you)!.state.pos;
-    const end = inEpoch[inEpoch.length - 1]!.cars.find((c) => c.slot === wa.you)!.state.pos;
+    const start = inEpoch[0]!.cars.find((c) => c.slot === rosterA.you)!.state.pos;
+    const end = inEpoch[inEpoch.length - 1]!.cars.find((c) => c.slot === rosterA.you)!.state.pos;
     expect(Math.hypot(end.x - start.x, end.z - start.z)).toBeGreaterThan(3); // B sees A's car move
     const lastForA = a.snapshots[a.snapshots.length - 1]!;
     expect(lastForA.ackSeq).toBeGreaterThan(a.seq - 40); // the server keeps consuming A's inputs
@@ -73,7 +77,8 @@ describe('multiplayer flow', () => {
     b.hello({ mode: 'join', code: wa.room.code.toLowerCase() });
     const wb = await b.waitFor(() => b.welcome());
     expect(wb.room.code).toBe(wa.room.code);
-    expect(wb.you).toBe(1);
+    expect(wb.you).toBe(-1); // no car until the next roster
+    expect((await b.waitFor(() => rosterWith(b, 2), 4000, 'roster with both')).you).toBe(1);
 
     const c = await connect();
     c.hello({ mode: 'join', code: 'ZZZZ' });
@@ -109,7 +114,7 @@ describe('multiplayer flow', () => {
     await b.waitFor(() => b.welcome());
     await b.waitFor(() => rosterWith(b, 2), 4000, 'both seated');
     a.close();
-    await b.waitFor(() => rosterWith(b, 1), 4000, 'roster after A left');
+    await b.waitFor(() => b.messages.find((m) => m.t === 'ko' && m.reason === 'disconnected'), 4000, 'A to be eliminated');
     expect(app.lobby.playerCount).toBe(1);
     b.close();
     const t0 = Date.now();
@@ -120,12 +125,13 @@ describe('multiplayer flow', () => {
   it('neutralises a car whose player stops sending input', async () => {
     const a = await connect();
     a.hello();
-    const w = await a.waitFor(() => a.welcome());
+    await a.waitFor(() => a.welcome());
     const roster = await a.waitFor(() => rosterWith(a, 1), 4000, 'roster');
+    await a.waitFor(() => goesLive(a), 3000, 'the round to go live');
     await a.drive(forward, 300);
     await sleep(1200);
     const last = await a.waitFor(() => a.snapshots.filter((s) => s.epoch === roster.epoch).at(-1));
-    expect(last.cars.find((c) => c.slot === w.you)!.throttle).toBe(0);
+    expect(last.cars.find((c) => c.slot === roster.you)!.throttle).toBe(0);
   });
 });
 

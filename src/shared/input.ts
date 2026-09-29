@@ -10,6 +10,9 @@ export interface CarInput {
 
 export const NEUTRAL_INPUT: Readonly<CarInput> = { throttle: 0, steer: 0, handbrake: false };
 
+/** What a car that is frozen (countdown, results) or wrecked is given: no drive and the handbrake on, so it stays put. */
+export const PARKED_INPUT: Readonly<CarInput> = { throttle: 0, steer: 0, handbrake: true };
+
 export const FLAG_HANDBRAKE = 1;
 
 /** Wire representation: two int8 and a flags byte. */

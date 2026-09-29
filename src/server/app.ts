@@ -6,6 +6,7 @@ import { decodeInput, normalizeRoomCode, parseClientMessage, sanitizeName, type 
 import { TokenBucket } from './limits';
 import { Lobby, type JoinResult } from './lobby';
 import { Player } from './player';
+import type { RoomRules } from './room';
 import { createStaticHandler } from './static';
 
 export interface GameServerOptions {
@@ -17,6 +18,12 @@ export interface GameServerOptions {
   maxConnections?: number;
   /** Milliseconds a new socket may stay silent before it is closed; defaults to NET.HELLO_TIMEOUT_MS. */
   helloTimeoutMs?: number;
+  /** Round timing in simulation ticks (defaults: 5 s countdown, 4 min round, 8 s results). */
+  rules?: Partial<RoomRules>;
+  /** Bots fill each room up to this many cars (default 4; 0 = none). */
+  botFill?: number;
+  /** Seeds the bots' randomness (default: random per room). */
+  seed?: number;
 }
 
 export interface ServerStats {
@@ -68,7 +75,10 @@ function toBytes(data: RawData): Uint8Array {
 const DT_MS = 1000 / PHYSICS.TICK_RATE;
 
 export function createGameServer(options: GameServerOptions = {}): GameServer {
-  const lobby = new Lobby({ maxRooms: options.maxRooms ?? 12 });
+  const lobby = new Lobby({
+    maxRooms: options.maxRooms ?? 12,
+    room: { rules: options.rules, botFill: options.botFill, ...(options.seed === undefined ? {} : { seed: options.seed }) },
+  });
   const staticHandler = options.staticDir ? createStaticHandler(options.staticDir) : null;
   const maxConnections = options.maxConnections ?? 200;
   const helloTimeoutMs = options.helloTimeoutMs ?? NET.HELLO_TIMEOUT_MS;
@@ -159,17 +169,18 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
       return;
     }
     player.joined = true;
+    const greeting = result.room.greeting(player);
     player.send({
       t: 'welcome',
       v: NET.PROTOCOL_VERSION,
-      you: result.slot,
+      you: greeting.you,
       room: result.room.info(),
       epoch: result.room.epoch,
-      players: result.room.playerInfos(),
+      players: greeting.players,
       tickRate: PHYSICS.TICK_RATE,
       snapshotEvery: NET.SNAPSHOT_EVERY,
-      phase: null,
-      scores: [],
+      phase: greeting.phase,
+      scores: greeting.scores,
     });
   }
 

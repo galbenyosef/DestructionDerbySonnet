@@ -3,6 +3,7 @@ import { ARENA, NET } from '../../src/shared/constants';
 import { initPhysics } from '../../src/shared/physics';
 import { Lobby, type JoinResult } from '../../src/server/lobby';
 import { Player } from '../../src/server/player';
+import type { RoomOptions } from '../../src/server/room';
 import { FakeSocket } from '../helpers/fakeSocket';
 
 beforeAll(async () => {
@@ -10,8 +11,8 @@ beforeAll(async () => {
 });
 
 const lobbies: Lobby[] = [];
-const makeLobby = (maxRooms = 5, random?: () => number): Lobby => {
-  const l = new Lobby({ maxRooms, random });
+const makeLobby = (maxRooms = 5, random?: () => number, room?: RoomOptions): Lobby => {
+  const l = new Lobby({ maxRooms, random, room: { botFill: 0, ...room } });
   lobbies.push(l);
   return l;
 };
@@ -48,6 +49,22 @@ describe('Lobby quick play', () => {
     lobby.leave(leaver); // A now has 7
     expect(ok(lobby.quickPlay(newPlayer())).room).toBe(a); // A (7) is fuller than B (2)
     expect(b.playerCount).toBe(2);
+  });
+
+  it('prefers a room where a car comes soon (between rounds) over a fuller one that is mid-round', () => {
+    const lobby = makeLobby(5, undefined, { rules: { countdownTicks: 2, liveTicks: 30, resultsTicks: 500 } });
+    const crowded = ok(lobby.quickPlay(newPlayer())).room;
+    for (let i = 1; i < ARENA.MAX_CARS; i++) lobby.quickPlay(newPlayer());
+    const quiet = ok(lobby.quickPlay(newPlayer())).room; // the ninth player opens a second public room
+    expect(quiet).not.toBe(crowded);
+    for (let i = 0; i < 5; i++) crowded.step(); // the crowded room is now mid-round
+    for (let i = 0; i < 40; i++) quiet.step(); // the quiet room has finished its round
+    expect([crowded.phase, quiet.phase]).toEqual(['live', 'results']);
+    for (const p of crowded.seated().slice(0, 5)) lobby.leave(p); // both rooms have space now: 3 humans against 1
+    expect(ok(lobby.quickPlay(newPlayer())).room).toBe(quiet);
+    for (let i = 0; i < 700 && quiet.phase !== 'live'; i++) quiet.step(); // the quiet room starts its next round
+    expect(quiet.phase).toBe('live');
+    expect(ok(lobby.quickPlay(newPlayer())).room).toBe(crowded); // both are mid-round now, so the fuller one wins
   });
 
   it('never places quick-play players into private rooms', () => {
@@ -91,7 +108,7 @@ describe('Lobby private rooms', () => {
     const created = ok(lobby.createPrivate(newPlayer()));
     const joined = ok(lobby.join(newPlayer(), created.room.code));
     expect(joined.room).toBe(created.room);
-    expect(joined.slot).toBe(1);
+    expect(joined.slot).toBe(-1); // a car comes with the next roster
     expect(lobby.join(newPlayer(), 'ZZZZ')).toEqual({ ok: false, code: 'room_not_found' });
     for (let i = 2; i < ARENA.MAX_CARS; i++) ok(lobby.join(newPlayer(), created.room.code));
     expect(lobby.join(newPlayer(), created.room.code)).toEqual({ ok: false, code: 'room_full' });
@@ -128,7 +145,7 @@ describe('Lobby lifecycle', () => {
     expect(lobby.getRoom(broken.code)).toBeUndefined();
     expect(lobby.roomCount).toBe(1);
     expect(log).toHaveBeenCalledTimes(1);
-    for (let i = 0; i < NET.REBUILD_DELAY_TICKS; i++) lobby.tickAll();
+    for (let i = 0; i < 3; i++) lobby.tickAll();
     expect(sockets[1]!.json().some((m) => m.t === 'roster')).toBe(true); // the healthy room still runs
     expect(sockets[1]!.closed).toBeNull();
     log.mockRestore();
@@ -142,7 +159,7 @@ describe('Lobby lifecycle', () => {
     const players = sockets.map((s) => new Player(nextId++, s));
     ok(lobby.createPrivate(players[0]!));
     ok(lobby.createPrivate(players[1]!));
-    for (let i = 0; i < NET.REBUILD_DELAY_TICKS; i++) lobby.tickAll();
+    for (let i = 0; i < 3; i++) lobby.tickAll();
     for (const s of sockets) expect(s.json().some((m) => m.t === 'roster')).toBe(true);
   });
 });

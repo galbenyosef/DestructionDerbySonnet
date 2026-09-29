@@ -1,7 +1,7 @@
 import { NET } from '../shared/constants';
 import type { ErrorCode } from '../shared/protocol';
 import type { Player } from './player';
-import { Room } from './room';
+import { Room, type RoomOptions } from './room';
 
 export type JoinResult = { ok: true; room: Room; slot: number } | { ok: false; code: ErrorCode };
 
@@ -9,6 +9,8 @@ export interface LobbyOptions {
   maxRooms: number;
   /** Injectable for tests; defaults to Math.random (server-only, never used by the simulation). */
   random?: () => number;
+  /** Round timing, bot count and bot seed for every room. */
+  room?: RoomOptions;
 }
 
 export class Lobby {
@@ -33,11 +35,15 @@ export class Lobby {
     return this.rooms.get(code);
   }
 
-  /** Joins the fullest public room that still has space, or opens a new public room. */
+  /**
+   * Joins a public room that still has space and where a car is soonest: one that is between rounds or has not started,
+   * then the fullest, or opens a new public room.
+   */
   quickPlay(player: Player): JoinResult {
     let best: Room | null = null;
     for (const r of this.rooms.values()) {
-      if (r.isPublic && !r.isFull && (!best || r.playerCount > best.playerCount)) best = r;
+      if (!r.isPublic || r.isFull) continue;
+      if (!best || (r.carSoon && !best.carSoon) || (r.carSoon === best.carSoon && r.playerCount > best.playerCount)) best = r;
     }
     if (!best) {
       if (this.rooms.size >= this.options.maxRooms) return { ok: false, code: 'server_full' };
@@ -83,16 +89,20 @@ export class Lobby {
   }
 
   private seat(room: Room, player: Player): JoinResult {
-    const slot = room.addPlayer(player);
-    return slot < 0 ? { ok: false, code: 'room_full' } : { ok: true, room, slot };
+    return room.addPlayer(player) ? { ok: true, room, slot: player.slot } : { ok: false, code: 'room_full' };
   }
 
   private createRoom(isPublic: boolean): Room {
     const code = this.newCode();
-    const room = new Room(code, isPublic, (r) => {
-      this.rooms.delete(r.code);
-      r.dispose();
-    });
+    const room = new Room(
+      code,
+      isPublic,
+      (r) => {
+        this.rooms.delete(r.code);
+        r.dispose();
+      },
+      { seed: (Math.random() * 0x1_0000_0000) >>> 0, ...this.options.room },
+    );
     this.rooms.set(code, room);
     return room;
   }

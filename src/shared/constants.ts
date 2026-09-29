@@ -145,8 +145,6 @@ export const NET = {
   PROTOCOL_VERSION: 2,
   /** Simulation ticks per snapshot: 2 => 30 Hz. */
   SNAPSHOT_EVERY: 2,
-  /** Ticks between a roster change and the world rebuild (baseline policy). */
-  REBUILD_DELAY_TICKS: 30,
   INPUT_QUEUE_MAX: 6,
   /** Ticks without a fresh input before the last input is replaced by neutral (0.5 s). */
   INPUT_STARVE_NEUTRAL_TICKS: 30,

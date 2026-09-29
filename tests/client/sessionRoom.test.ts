@@ -24,7 +24,7 @@ const swerve: CarInput = { throttle: 0.5, steer: -0.5, handbrake: false };
 
 describe('a client that gives up prediction in the middle of a game', () => {
   it('keeps numbering its inputs after the server-visible ones, so the server keeps consuming them', () => {
-    const room = new Room('FALL', true, () => undefined);
+    const room = new Room('FALL', true, () => undefined, { botFill: 0, rules: { countdownTicks: 2, liveTicks: 400, resultsTicks: 30 } });
     rooms.push(room);
     const socket = new FakeSocket();
     const me = new Player(1, socket);
@@ -69,10 +69,10 @@ describe('a client that gives up prediction in the middle of a game', () => {
     expect(session.snapshotsReceived).toBeGreaterThan(100);
     expect(me.ackSeq).toBe(300);
 
-    // A third player joins: the server rebuilds the world, and this client cannot build the bigger one.
+    // A third player joins and watches; when the next round starts the world has three cars, which this client cannot build.
     canBuildWorlds = false;
     room.addPlayer(new Player(3, new FakeSocket()));
-    for (let i = 0; i < 60 && session.mode === 'predict'; i++, k++) tick(k);
+    for (let i = 0; i < 300 && session.mode === 'predict'; i++, k++) tick(k);
     expect(session.mode).toBe('interp');
     const ackedAtFallback = me.ackSeq;
 

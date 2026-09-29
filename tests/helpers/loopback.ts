@@ -6,7 +6,7 @@ import { decodeSnapshot, type Snapshot } from '../../src/shared/protocol';
 import type { Simulation } from '../../src/shared/sim';
 import type { CarState } from '../../src/shared/types';
 import { Player } from '../../src/server/player';
-import { Room } from '../../src/server/room';
+import { Room, type RoomRules } from '../../src/server/room';
 import { FakeSocket } from './fakeSocket';
 
 export const TICK_MS = 1000 / 60;
@@ -35,6 +35,8 @@ export interface LoopbackOptions {
    * input immediately, so snapshots need no replay (the situation on localhost and fast LANs).
    */
   clientFirst?: boolean;
+  /** Round timing on the server (default: a one-tick countdown, then a live round that never ends). */
+  rules?: Partial<RoomRules>;
 }
 
 /**
@@ -42,7 +44,7 @@ export interface LoopbackOptions {
  * client Predictor. Time is simulated, so runs are fast and repeatable.
  */
 export class Loopback {
-  readonly room = new Room('LOOP', true, () => undefined);
+  readonly room: Room;
   readonly local = new Player(1, new FakeSocket());
   readonly remote = new Player(2, new FakeSocket());
   readonly world: PredictedWorld;
@@ -57,6 +59,10 @@ export class Loopback {
   private readonly down: DelayLine<Down>;
 
   constructor(private readonly options: LoopbackOptions) {
+    this.room = new Room('LOOP', true, () => undefined, {
+      botFill: 0,
+      rules: { countdownTicks: 1, liveTicks: 1e9, resultsTicks: 1e9, ...options.rules },
+    });
     const random = mulberry32(options.seed ?? 1);
     const line = { oneWayMs: (options.rttMs ?? 0) / 2, jitterMs: options.jitterMs ?? 0, lossPct: options.lossPct ?? 0 };
     this.up = new DelayLine(line, random);
@@ -64,7 +70,7 @@ export class Loopback {
     this.down = new DelayLine(line, random);
     this.room.addPlayer(this.local);
     this.room.addPlayer(this.remote);
-    this.world = new PredictedWorld(this.local.slot, { predictor: options.predictor, smoothing: options.smoothing });
+    this.world = new PredictedWorld(0, { predictor: options.predictor, smoothing: options.smoothing }); // the first player to join gets slot 0
     this.world.beginWorld(this.room.epoch);
   }
 
