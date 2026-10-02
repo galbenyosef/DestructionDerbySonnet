@@ -1,4 +1,5 @@
-import { ARENA, COMBAT } from '../shared/constants';
+import { DEFAULT_ARENA, outOfBounds, type ArenaDef } from '../shared/arenas';
+import { COMBAT } from '../shared/constants';
 import { quatRotate } from '../shared/math';
 import type { CarState } from '../shared/types';
 
@@ -29,11 +30,14 @@ export class CarWatch {
   private stillTicks = 0;
   private quietTicks = 0;
 
+  /** `arena` says where the walls are; the Stadium by default. */
+  constructor(private readonly arena: ArenaDef = DEFAULT_ARENA) {}
+
   /** `inHit` is true on ticks where a hit closed for this car, as victim or as attacker. */
   update(state: CarState, inHit: boolean): WatchResult {
     const { pos, quat, linvel } = state;
     if (!isFiniteState(state)) return { fault: 'bounds', drain: 0 }; // a broken body must not stay in the round
-    if (Math.hypot(pos.x, pos.z) > ARENA.RADIUS + COMBAT.BOUNDS_MARGIN || pos.y < COMBAT.BOUNDS_MIN_Y) {
+    if (outOfBounds(this.arena.bounds, pos.x, pos.z, COMBAT.BOUNDS_MARGIN) || pos.y < COMBAT.BOUNDS_MIN_Y) {
       return { fault: 'bounds', drain: 0 };
     }
     this.flippedTicks = quatRotate(quat, UP).y < COMBAT.FLIP_UP_Y ? this.flippedTicks + 1 : 0;

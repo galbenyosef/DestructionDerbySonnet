@@ -1,4 +1,5 @@
 import { spawnPose } from '../shared/arena';
+import { DEFAULT_ARENA, type ArenaDef } from '../shared/arenas';
 import { COMBAT } from '../shared/constants';
 import type { HitMessage, KoMessage, KoReason } from '../shared/protocol';
 import type { Simulation } from '../shared/sim';
@@ -26,7 +27,7 @@ const ZERO = { x: 0, y: 0, z: 0 } as const;
 
 /** Where a car stands and how it is at the start of the round: a finite place to leave a broken body. */
 function spawnState(sim: Simulation, slot: number): CarState {
-  const pose = spawnPose(sim.slots.indexOf(slot), sim.slots.length);
+  const pose = spawnPose(sim.slots.indexOf(slot), sim.slots.length, sim.arena);
   return { pos: pose.pos, quat: pose.quat, linvel: ZERO, angvel: ZERO };
 }
 
@@ -44,10 +45,10 @@ export class RoundState {
   private readonly log = new AttackLog();
   private readonly watches = new Map<number, CarWatch>();
 
-  constructor(slots: readonly number[]) {
+  constructor(slots: readonly number[], arena: ArenaDef = DEFAULT_ARENA) {
     for (const slot of slots) {
       this.status.set(slot, { slot, hp: COMBAT.MAX_HP, alive: true, kills: 0, damage: 0, gained: 0 });
-      this.watches.set(slot, new CarWatch());
+      this.watches.set(slot, new CarWatch(arena));
     }
   }
 

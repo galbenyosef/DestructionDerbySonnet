@@ -1,4 +1,5 @@
-import { ARENA, CAR_FORWARD, COMBAT } from '../shared/constants';
+import { boundsClearance, DEFAULT_ARENA, type ArenaDef } from '../shared/arenas';
+import { CAR_FORWARD, COMBAT } from '../shared/constants';
 import { NEUTRAL_INPUT, type CarInput } from '../shared/input';
 import { clamp, quatRotate } from '../shared/math';
 import { mulberry32 } from '../shared/random';
@@ -24,6 +25,8 @@ const RETARGET_TICKS = 45;
 const STUCK_TICKS = 60;
 const REVERSE_TICKS = 75;
 const WOBBLE_TICKS = 20;
+/** A bot turns away when the playable area's edge is closer than this (m), at its own place or at the look-ahead point. */
+const WALL_MARGIN = 4;
 const UP: { x: number; y: number; z: number } = { x: 0, y: 1, z: 0 };
 
 /** Unit vector on the ground plane (falls back to +X). */
@@ -51,7 +54,8 @@ export class BotBrain {
   private reversing = 0;
   private reverseSteer = 1;
 
-  constructor(seed: number, skill?: number) {
+  /** `arena` tells the bot where its walls are (the Stadium's by default). */
+  constructor(seed: number, skill?: number, private readonly arena: ArenaDef = DEFAULT_ARENA) {
     this.random = mulberry32(seed);
     this.skill = clamp(skill ?? 0.6 + this.random() * 0.35, 0, 1);
   }
@@ -100,14 +104,14 @@ export class BotBrain {
     steer = clamp(steer + this.wobble, -1, 1);
 
     // keep off the wall: when the road ahead runs out, turn toward the middle and ease off
-    const radius = Math.hypot(pos.x, pos.z);
     const look = 5 + Math.max(0, speed) * 0.6;
-    const limit = ARENA.RADIUS - 4;
-    if (radius > limit || Math.hypot(pos.x + f.x * look, pos.z + f.z * look) > limit) {
+    const margin = WALL_MARGIN;
+    const here = boundsClearance(this.arena.bounds, pos.x, pos.z);
+    if (here < margin || boundsClearance(this.arena.bounds, pos.x + f.x * look, pos.z + f.z * look) < margin) {
       const side = { x: -f.z, z: f.x };
       const toCentre = Math.atan2(-pos.x * side.x - pos.z * side.z, -pos.x * f.x - pos.z * f.z);
       steer = clamp(toCentre * 2, -1, 1);
-      throttle = Math.min(throttle || 0.5, radius > limit + 2 ? 0.5 : 0.7);
+      throttle = Math.min(throttle || 0.5, here < margin - 2 ? 0.5 : 0.7);
     }
 
     // stuck: pushing without getting anywhere for a second, so back out turning the other way

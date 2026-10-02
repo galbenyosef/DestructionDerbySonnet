@@ -1,3 +1,4 @@
+import { DEFAULT_ARENA, type ArenaDef } from '../shared/arenas';
 import { ARENA, NET, PHYSICS, ROUND } from '../shared/constants';
 import { PARKED_INPUT, type CarInput } from '../shared/input';
 import {
@@ -76,6 +77,8 @@ export class Room {
   /** The cars of the running round; the index is the slot. Includes players who have left since. */
   private roundCars: Participant[] = [];
   private brains = new Map<number, BotBrain>();
+  /** The arena of the running (or coming) round. */
+  private arena: ArenaDef = DEFAULT_ARENA;
   private sim: Simulation | null = null;
   private state: RoundState | null = null;
   private folded = false;
@@ -255,10 +258,10 @@ export class Room {
     this.roundCars.forEach((p, slot) => {
       p.slot = slot;
     });
-    this.brains = new Map(bots.map((b, i) => [b.slot, new BotBrain((this.seed + this.round * 7919 + i * 104_729) >>> 0)] as const));
+    this.brains = new Map(bots.map((b, i) => [b.slot, new BotBrain((this.seed + this.round * 7919 + i * 104_729) >>> 0, undefined, this.arena)] as const));
     const slots = this.roundCars.map((_, slot) => slot);
-    this.sim = new Simulation(slots);
-    this.state = new RoundState(slots);
+    this.sim = new Simulation(slots, { arena: this.arena });
+    this.state = new RoundState(slots, this.arena);
     this.folded = false;
     this.hitLog = [];
     this.phase = 'countdown';
