@@ -59,7 +59,7 @@ describe('RoundState.step: impacts', () => {
     for (const h of hits) {
       expect(h.zone).toBe('front');
       expect(h.attacker).toBe(h.victim === 0 ? 1 : 0);
-      expect(h.dmg).toBeGreaterThan(22);
+      expect(h.dmg).toBeGreaterThan(17.5);
       expect(h.dmg).toBeLessThan(29);
       expect(h.hp).toBeCloseTo(100 - h.dmg, 1);
       expect(h.j).toBeGreaterThan(17);

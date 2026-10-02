@@ -45,12 +45,12 @@ describe('Room combat', () => {
       const hits = messages(who.socket, 'hit');
       expect(hits).toHaveLength(2);
       expect(hits.map((h) => [h.victim, h.attacker, h.zone])).toEqual([[0, 1, 'front'], [1, 0, 'front']]);
-      expect(hits[0]!.dmg as number).toBeGreaterThan(22);
+      expect(hits[0]!.dmg as number).toBeGreaterThan(17.5);
     }
     const last = snapshots(a.socket).at(-1)!;
     for (const c of last.cars) {
-      expect(c.hp).toBeGreaterThan(70);
-      expect(c.hp).toBeLessThan(80);
+      expect(c.hp).toBeGreaterThan(75);
+      expect(c.hp).toBeLessThanOrEqual(80);
     }
     expect(roundState(room).aliveSlots()).toEqual([0, 1]);
   });
@@ -89,8 +89,8 @@ describe('Room combat', () => {
     const rows = (messages(a.socket, 'scores').at(-1)!.rows as Array<{ slot: number; score: number; kills: number }>);
     expect(rows.map((r) => r.slot)).toEqual([0, 1]);
     for (const r of rows) {
-      expect(r.score).toBeGreaterThan(22);
-      expect(r.score).toBeLessThan(29);
+      expect(r.score).toBeGreaterThan(17.5);
+      expect(r.score).toBeLessThan(23.5);
       expect(r.kills).toBe(0);
     }
   });
@@ -118,7 +118,7 @@ describe('Room combat', () => {
     expect(rows[0]).toMatchObject({ slot: 0, kills: 1, damage: 5, alive: true });
     expect(rows[0]!.gained).toBeCloseTo(5 + COMBAT.KILL_POINTS + COMBAT.WIN_POINTS, 0); // damage + kill + win
     expect(rows[1]).toMatchObject({ slot: 1, kills: 0, alive: false, hp: 0 });
-    expect(rows[1]!.gained).toBeGreaterThan(22); // the wreck still earned the damage it dealt before it went
+    expect(rows[1]!.gained).toBeGreaterThan(17.5); // the wreck still earned the damage it dealt before it went
     const wreck = snapshots(a.socket).at(-1)!.cars.find((c) => c.slot === 1)!;
     expect(wreck.flags & 1).toBe(0);
     expect(wreck.hp).toBe(0);

@@ -17,8 +17,8 @@ describe('impactDamage', () => {
     expect(impactDamage(3.7)).toBeLessThan(1.5); // a bump barely scratches
     expect(impactDamage(9.5)).toBeGreaterThan(5);
     expect(impactDamage(9.5)).toBeLessThan(8); // a firm hit costs a few percent
-    expect(impactDamage(19.2)).toBeGreaterThan(20);
-    expect(impactDamage(19.2)).toBeLessThan(24); // a hard head-on is about a fifth of a car
+    expect(impactDamage(19.2)).toBeGreaterThan(16);
+    expect(impactDamage(19.2)).toBeLessThan(19.5); // a hard head-on is about a sixth of a car
   });
 
   it('grows faster than linearly, so hard hits hurt disproportionately', () => {

@@ -68,14 +68,14 @@ export interface DriveTuning {
   STEER_SIGN: 1 | -1;
 }
 export const DRIVE: DriveTuning = {
-  ENGINE: 8000,
+  ENGINE: 8960,
   REVERSE_SCALE: 0.6,
   BRAKE: 55,
   HANDBRAKE: 30,
-  MAX_SPEED: 21,
+  MAX_SPEED: 23.5,
   MAX_STEER: 0.55,
   MAX_STEER_FAST: 0.25,
-  STEER_FADE_SPEED: 20,
+  STEER_FADE_SPEED: 22,
   STEER_SIGN: -1,
 };
 
@@ -108,7 +108,7 @@ export const COMBAT = {
   /** Impacts weaker than this (kN·s) do no damage. */
   MIN_IMPULSE: 1.5,
   /** damage = DAMAGE_SCALE * (impulse - MIN_IMPULSE) ^ DAMAGE_EXPONENT, before the multipliers. */
-  DAMAGE_SCALE: 0.295,
+  DAMAGE_SCALE: 0.236,
   DAMAGE_EXPONENT: 1.5,
   /** Applied to the zone of the car that is hit: backing into an opponent is the smart move. */
   ZONE_MULTIPLIER: { front: 1.15, rear: 0.9, left: 1, right: 1 },

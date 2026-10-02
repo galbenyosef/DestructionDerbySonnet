@@ -59,7 +59,7 @@ describe('simHash', () => {
 describe('simHash in each arena', () => {
   // Recorded from `npm run hash -- 600 <arena>`; the browser must print the same (`await __derby.simHash(600, '<arena>')`).
   // A change to the physics, the tuning or a layout moves them on purpose or by mistake: say which, and record the new ones.
-  const RECORDED = { stadium: '10c3a72a', ice: '349f6dd7', quarry: 'c44738de', port: '4037f0e3' } as const;
+  const RECORDED = { stadium: '8719c2e8', ice: '76ca0746', quarry: '170a27e5', port: '454e9fb5' } as const;
 
   for (const id of ARENA_IDS) {
     it(`prints the recorded hash for ${id}`, () => {

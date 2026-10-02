@@ -33,8 +33,8 @@ describe('HitTracker', () => {
       expect(h.tick).toBe(10);
       expect(h.zone).toBe('front');
       expect(h.impulse).toBeCloseTo(19.2, 9);
-      expect(h.damage).toBeGreaterThan(24); // ~21.8 x 1.15 for a front hit
-      expect(h.damage).toBeLessThan(27);
+      expect(h.damage).toBeGreaterThan(19); // ~17.6 x 1.15 for a front hit
+      expect(h.damage).toBeLessThan(22);
     }
   });
 
@@ -197,8 +197,8 @@ describe('HitTracker on the real simulation', () => {
     expect(hits).toHaveLength(2);
     for (const h of hits) {
       expect(h.zone).toBe('front');
-      expect(h.damage).toBeGreaterThan(22);
-      expect(h.damage).toBeLessThan(29);
+      expect(h.damage).toBeGreaterThan(17.5);
+      expect(h.damage).toBeLessThan(23.5);
     }
   });
 
@@ -209,8 +209,8 @@ describe('HitTracker on the real simulation', () => {
     const hits = drive(s, 150);
     expect(hits).toHaveLength(1);
     expect(hits[0]!.attacker).toBe(-1);
-    expect(hits[0]!.damage).toBeGreaterThan(15);
-    expect(hits[0]!.damage).toBeLessThan(28);
+    expect(hits[0]!.damage).toBeGreaterThan(12);
+    expect(hits[0]!.damage).toBeLessThan(22.5);
   });
 
   it('does nothing for a gentle bump', () => {
@@ -258,8 +258,8 @@ describe('HitTracker on the real simulation', () => {
     }
     expect(Math.max(...hits.map((h) => h.tick), 0)).toBeLessThan(180); // the cars meet at the start; ten seconds of shoving add nothing
     for (const slot of [0, 1, 2]) {
-      // the pile-up itself costs the pinned car about 16 HP; ten seconds of shoving used to take 450 HP off it
-      expect(hits.filter((h) => h.victim === slot).reduce((sum, h) => sum + h.damage, 0)).toBeLessThan(25);
+      // the pile-up itself costs the pinned car about 13 HP; ten seconds of shoving used to take 450 HP off it
+      expect(hits.filter((h) => h.victim === slot).reduce((sum, h) => sum + h.damage, 0)).toBeLessThan(20);
     }
   });
 
