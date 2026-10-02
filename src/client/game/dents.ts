@@ -119,10 +119,14 @@ export class DentSurface {
   private readonly rest: Float32Array;
   private readonly raw: Float32Array;
 
-  /** `origin` is where the mesh sits in the car frame (meshes are not rotated). */
+  /**
+   * `origin` is where the mesh sits in the car frame (meshes are not rotated). With `smooth` the surface is shaded again after every change
+   * (a model with smooth normals; the flat-shaded boxes need no normals).
+   */
   constructor(
     readonly geometry: THREE.BufferGeometry,
     private readonly origin: Vec3,
+    private readonly smooth = false,
   ) {
     this.rest = Float32Array.from(geometry.getAttribute('position').array as ArrayLike<number>);
     this.raw = new Float32Array(this.rest.length);
@@ -150,5 +154,6 @@ export class DentSurface {
       out[i + 2] = this.rest[i + 2]! + offset[2];
     }
     position.needsUpdate = true;
+    if (this.smooth && this.geometry.getAttribute('normal')) this.geometry.computeVertexNormals(); // vertices shared by faces get the average, creases (duplicated vertices) stay
   }
 }
