@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { HP_BAR, NameTag } from '../../src/client/game/nameTag';
+import { HP_BAR, NameTag, needsNewTag } from '../../src/client/game/nameTag';
 
 // Node has no canvas: the name is drawn by a stand-in that returns a plain sprite.
 const plainLabel = (): THREE.Sprite => new THREE.Sprite(new THREE.SpriteMaterial());
@@ -60,5 +60,30 @@ describe('NameTag', () => {
     tag.dispose();
     expect(disposed).toBe(3);
     expect(car.children).toHaveLength(0);
+  });
+});
+
+describe('needsNewTag', () => {
+  const carWith = (tag?: NameTag) => {
+    const car = { group: new THREE.Group() };
+    if (tag) car.group.add(tag.group);
+    return car;
+  };
+
+  it('wants a tag for a car that has none', () => {
+    expect(needsNewTag(undefined, 'Rex', carWith())).toBe(true);
+  });
+
+  it('keeps the tag a car has when the name is the same, and replaces it when the name changed', () => {
+    const tag = new NameTag('Rex', plainLabel);
+    const car = carWith(tag);
+    expect(needsNewTag(tag, 'Rex', car)).toBe(false);
+    expect(needsNewTag(tag, 'Max', car)).toBe(true);
+  });
+
+  it('wants a new tag when the car was rebuilt, even for the same name: the old tag went with the old car', () => {
+    const tag = new NameTag('Rex', plainLabel);
+    carWith(tag); // the old car, now thrown away
+    expect(needsNewTag(tag, 'Rex', carWith())).toBe(true);
   });
 });

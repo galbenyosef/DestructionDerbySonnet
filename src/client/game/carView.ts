@@ -267,7 +267,8 @@ export class CarView {
 
   /** Which pieces of a model are drawn: not the parts that have come off, and not the small things on Low. */
   private refreshVisibility(): void {
-    for (const mesh of this.modelNodes) mesh.visible = !(this.detailFull ? false : SMALL_DETAIL.has(mesh.name));
+    // a node with several materials is a group of meshes named `interior`, `interior_1`, ...: they go together
+    for (const mesh of this.modelNodes) mesh.visible = this.detailFull || !SMALL_DETAIL.has(mesh.name.replace(/_\d+$/, ''));
     for (const id of this.lostParts) for (const node of this.modelParts.get(id)?.nodes ?? []) node.visible = false;
   }
 

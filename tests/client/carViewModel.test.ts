@@ -85,10 +85,10 @@ describe('CarView with a Blender model', () => {
   it('dents the bodywork where it was hit and the neighbouring panels with it, and leaves wheels, decals and interior alone', () => {
     const view = new CarView(0xd84a2b);
     view.useModel(fakeCarModel());
-    const before = Object.fromEntries(['body', 'hood', 'bumper_F', 'wheel_FR', 'number_L', 'interior'].map((n) => [n, positions(mesh(view, n))]));
+    const before = Object.fromEntries(['body', 'hood', 'bumper_F', 'wheel_FR', 'number_L', 'interior_1'].map((n) => [n, positions(mesh(view, n))]));
     view.dent(hit());
     for (const n of ['body', 'hood', 'bumper_F']) expect(positions(mesh(view, n)), n).not.toEqual(before[n]);
-    for (const n of ['wheel_FR', 'number_L', 'interior']) expect(positions(mesh(view, n)), n).toEqual(before[n]);
+    for (const n of ['wheel_FR', 'number_L', 'interior_1']) expect(positions(mesh(view, n)), n).toEqual(before[n]);
     view.restore();
     expect(positions(mesh(view, 'body'))).toEqual(before.body);
     view.dispose();
@@ -169,14 +169,20 @@ describe('CarView with a Blender model', () => {
     const view = new CarView(0xd84a2b);
     view.useModel(fakeCarModel());
     view.setDetail(false);
-    expect([mesh(view, 'interior').visible, mesh(view, 'number_L').visible, mesh(view, 'roundel_L').visible]).toEqual([false, false, false]);
+    const interior = view.group.getObjectByName('interior')!;
+    const pieces: THREE.Mesh[] = [];
+    interior.traverse((o) => o instanceof THREE.Mesh && pieces.push(o));
+    expect(pieces.map((p) => p.name)).toEqual(['interior', 'interior_1', 'interior_2']); // the real one is three pieces
+    expect(pieces.map((p) => p.visible)).toEqual([false, false, false]);
+    expect([mesh(view, 'number_L').visible, mesh(view, 'roundel_L').visible]).toEqual([false, false]);
     expect([mesh(view, 'body').visible, mesh(view, 'glass').visible, mesh(view, 'wheel_FR').visible]).toEqual([true, true, true]);
     view.setDetail(true);
-    expect(mesh(view, 'interior').visible).toBe(true);
+    expect(pieces.map((p) => p.visible)).toEqual([true, true, true]);
     const later = new CarView(0xd84a2b);
     later.setDetail(false); // decided before the model came
     later.useModel(fakeCarModel());
-    expect(mesh(later, 'interior').visible).toBe(false);
+    expect(mesh(later, 'interior_1').visible).toBe(false);
+    expect(mesh(later, 'interior_2').visible).toBe(false);
     view.dispose();
     later.dispose();
   });

@@ -36,7 +36,17 @@ export function fakeCarModel(options: FakeCarOptions = {}): THREE.Group {
   part('bumper_R_rubber', black, [0.05, 0.1, 1.9], [-2.43, 0.4, 0], [1, 1, 4]);
   part('glass', glass, [2.4, 0.5, 1.7], [-0.25, 1.1, 0], [6, 1, 4]);
   part('headlamps', black, [0.06, 0.16, 1.4], [2.3, 0.75, 0], [1, 1, 2]);
-  part('interior', black, [2.0, 0.3, 1.5], [-0.2, 0.7, 0], [2, 1, 2]);
+  // a node with several materials is a group of meshes once loaded (GLTFLoader names them `interior`, `interior_1`, ...), as the real interior is
+  const interior = new THREE.Group();
+  interior.name = 'interior';
+  root.add(interior);
+  ['interior', 'interior_1', 'interior_2'].forEach((name, i) => {
+    const g = new THREE.BoxGeometry(2.0, 0.3, 1.5, 2, 1, 2);
+    g.translate(-0.2, 0.7 + i * 0.01, 0);
+    const m = new THREE.Mesh(g, black);
+    m.name = name;
+    interior.add(m);
+  });
   part('roundel_L', black, [0.3, 0.3, 0.02], [0.3, 0.7, -1.03], [1, 1, 1]);
   const decal = part('number_L', black, [0.3, 0.3, 0.02], [0, 0, 0], [1, 1, 1]); // a decal: positioned by its node, turned a little
   decal.position.set(0.27, 0.62, -1.07);

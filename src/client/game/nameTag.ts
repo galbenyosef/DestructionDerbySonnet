@@ -32,6 +32,14 @@ export function createNameTag(text: string): THREE.Sprite {
   return sprite;
 }
 
+/**
+ * Whether a car needs a new name tag: it has none, the name changed, or the tag hangs on another car than this one (the car was rebuilt
+ * for a different model and the old tag went with it, so a tag with the same name must not be taken for the new car's).
+ */
+export function needsNewTag(existing: { name: string; group: { parent: unknown } } | undefined, name: string, car: { group: unknown }): boolean {
+  return !existing || existing.name !== name || existing.group.parent !== car.group;
+}
+
 /** Width and height of the health bar under a name, in metres. */
 export const HP_BAR = { width: 2.2, height: 0.2, y: 1.85 } as const;
 

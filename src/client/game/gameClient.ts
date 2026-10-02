@@ -22,7 +22,7 @@ import { ArenaScenery, leadingArenas, loadGltfScenery } from './arenaScenery';
 import { FxDirector } from './fx';
 import { KeyboardInput } from './input';
 import { MatchState } from './matchState';
-import { NameTag } from './nameTag';
+import { NameTag, needsNewTag } from './nameTag';
 import type { GameScene } from './scene';
 import { CanvasMarks } from './skidMarks';
 import { SpectatorCamera, cycleDirection } from './spectator';
@@ -285,6 +285,7 @@ export class GameClient {
     for (const p of this.roster) {
       let existing = this.views.get(p.slot);
       if (existing && existing.car !== p.car) {
+        this.removeTag(p.slot);
         existing.dispose(); // another player's car in this slot: another model
         this.views.delete(p.slot);
         existing = undefined;
@@ -315,7 +316,7 @@ export class GameClient {
     const view = this.views.get(slot);
     if (!view) return;
     const existing = this.tags.get(slot);
-    if (existing && existing.name === name) return;
+    if (!needsNewTag(existing, name, view)) return;
     existing?.dispose();
     const tag = new NameTag(name);
     view.group.add(tag.group);
