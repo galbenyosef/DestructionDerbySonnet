@@ -17,9 +17,9 @@ export const SKID = {
 } as const;
 
 /** Where a world point lands on the marks texture (pixels; x to the right, y down as canvases do), for the plane the marks are drawn on. */
-export function worldToTexture(x: number, z: number): { u: number; v: number } {
-  const scale = SKID.SIZE / (2 * SKID.EXTENT);
-  return { u: (x + SKID.EXTENT) * scale, v: (z + SKID.EXTENT) * scale };
+export function worldToTexture(x: number, z: number, extent: number = SKID.EXTENT): { u: number; v: number } {
+  const scale = SKID.SIZE / (2 * extent);
+  return { u: (x + extent) * scale, v: (z + extent) * scale };
 }
 
 /**
@@ -39,6 +39,8 @@ export function skidStrength(car: { forward: number; lateral: number; handbrake:
 export interface MarkSurface {
   line(x0: number, y0: number, x1: number, y1: number, width: number, alpha: number): void;
   clear(): void;
+  /** The marks now cover a square of half-width `extent` metres (another arena); the picture on it is wiped. */
+  setExtent?(extent: number): void;
 }
 
 /**
@@ -48,8 +50,16 @@ export interface MarkSurface {
 export class SkidMarks {
   private readonly last = new Map<number, { x: number; z: number }>();
   private dirty = false;
+  private extent: number = SKID.EXTENT;
 
   constructor(private readonly surface: MarkSurface) {}
+
+  /** Another arena: the texture covers a square of half-width `extent` metres from now on, and starts blank. */
+  setExtent(extent: number): void {
+    this.extent = extent;
+    this.surface.setExtent?.(extent);
+    this.clear();
+  }
 
   /** A wheel (`slot * 4 + wheel`) is at (x, z) this frame, skidding with `strength` (0 = not skidding). */
   wheel(key: number, x: number, z: number, strength: number): void {
@@ -60,9 +70,9 @@ export class SkidMarks {
     const before = this.last.get(key);
     this.last.set(key, { x, z });
     if (!before || Math.hypot(x - before.x, z - before.z) > SKID.MAX_SEGMENT) return;
-    const a = worldToTexture(before.x, before.z);
-    const b = worldToTexture(x, z);
-    this.surface.line(a.u, a.v, b.u, b.v, SKID.WIDTH * (SKID.SIZE / (2 * SKID.EXTENT)), SKID.ALPHA * clamp(strength, 0, 1));
+    const a = worldToTexture(before.x, before.z, this.extent);
+    const b = worldToTexture(x, z, this.extent);
+    this.surface.line(a.u, a.v, b.u, b.v, SKID.WIDTH * (SKID.SIZE / (2 * this.extent)), SKID.ALPHA * clamp(strength, 0, 1));
     this.dirty = true;
   }
 
@@ -114,6 +124,11 @@ export class CanvasMarks implements MarkSurface {
 
   clear(): void {
     this.context.clearRect(0, 0, SKID.SIZE, SKID.SIZE);
+  }
+
+  setExtent(extent: number): void {
+    this.mesh.geometry.dispose();
+    this.mesh.geometry = new THREE.PlaneGeometry(2 * extent, 2 * extent);
   }
 
   /** Uploads the canvas to the GPU. */

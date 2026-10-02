@@ -58,7 +58,7 @@ Set **`TRUST_PROXY` to the number of proxies in front that append to `X-Forwarde
 | `MAX_CONNECTIONS` | 200 | sockets at once |
 | `MAX_CONNECTIONS_PER_IP` | 16 | sockets per public address (0 = no limit) |
 | `BOT_FILL` | 4 | bots fill a room up to this many cars (0 = none) |
-| `COUNTDOWN_SECONDS`, `ROUND_SECONDS`, `RESULTS_SECONDS` | 5, 240, 8 | round timing |
+| `COUNTDOWN_SECONDS`, `ROUND_SECONDS`, `RESULTS_SECONDS` | 5, 240, 12 | round timing |
 
 The README lists the rest.
 

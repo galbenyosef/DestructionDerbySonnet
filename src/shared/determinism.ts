@@ -1,3 +1,4 @@
+import { DEFAULT_ARENA, type ArenaDef } from './arenas';
 import type { CarInput } from './input';
 import { Simulation } from './sim';
 
@@ -28,8 +29,8 @@ const f64 = new Float64Array(1);
 const u32 = new Uint32Array(f64.buffer);
 
 /** Runs the script for `ticks` steps (Rapier must be initialised) and hashes every car's full state each tick. */
-export function runScripted(ticks = 600, slots: readonly number[] = [0, 1, 2]): ScriptedRun {
-  const sim = new Simulation(slots);
+export function runScripted(ticks = 600, slots: readonly number[] = [0, 1, 2], arena: ArenaDef = DEFAULT_ARENA): ScriptedRun {
+  const sim = new Simulation(slots, { arena });
   let h = 0x811c9dc5;
   const mix = (v: number): void => {
     f64[0] = v === 0 ? 0 : v; // fold -0 into 0: engines agree on values, and this keeps the hash about the state
@@ -64,4 +65,4 @@ export function runScripted(ticks = 600, slots: readonly number[] = [0, 1, 2]): 
   return { hash: h.toString(16).padStart(8, '0'), closestApproach: closest, topSpeed: top };
 }
 
-export const simHash = (ticks = 600, slots: readonly number[] = [0, 1, 2]): string => runScripted(ticks, slots).hash;
+export const simHash = (ticks = 600, slots: readonly number[] = [0, 1, 2], arena: ArenaDef = DEFAULT_ARENA): string => runScripted(ticks, slots, arena).hash;

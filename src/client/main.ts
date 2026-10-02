@@ -1,5 +1,6 @@
 import { freezeTuning } from '../shared/constants';
 import { initPhysics } from '../shared/physics';
+import { getArena, isArenaId } from '../shared/arenas';
 import { simHash } from '../shared/determinism';
 import { webglAvailable } from './game/capabilities';
 import { GameClient } from './game/gameClient';
@@ -115,9 +116,10 @@ async function boot(): Promise<void> {
 
 // Debug hooks: `await __derby.simHash()` hashes a scripted 600-tick simulation, to compare Node against this browser.
 Object.assign((window as unknown as { __derby?: object }).__derby ?? ((window as unknown as { __derby: object }).__derby = {}), {
-  simHash: async (ticks = 600): Promise<string> => {
+  simHash: async (ticks = 600, arena: string = 'stadium'): Promise<string> => {
     await initPhysics();
-    return simHash(ticks);
+    if (!isArenaId(arena)) throw new Error(`unknown arena "${arena}"`);
+    return simHash(ticks, [0, 1, 2], getArena(arena));
   },
 });
 

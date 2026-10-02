@@ -8,9 +8,9 @@ const players: PlayerInfo[] = [
   { slot: 2, name: 'Rusty', color: 0x8a8f98, bot: true },
 ];
 const welcome = (over: Partial<WelcomeMessage> = {}): WelcomeMessage => ({
-  t: 'welcome', v: 2, you: 0, room: { code: 'ABCD', public: true, capacity: 8 }, epoch: 1, players, tickRate: 60, snapshotEvery: 2, phase: null, scores: [], dents: [], ...over,
+  t: 'welcome', v: 2, you: 0, room: { code: 'ABCD', public: true, capacity: 8 }, epoch: 1, players, tickRate: 60, snapshotEvery: 2, phase: null, scores: [], dents: [], arena: 'stadium', votes: { stadium: 0, ice: 0, quarry: 0, port: 0 }, ...over,
 });
-const roster = (over: Partial<RosterMessage> = {}): RosterMessage => ({ t: 'roster', epoch: 2, round: 1, you: 0, players, ...over });
+const roster = (over: Partial<RosterMessage> = {}): RosterMessage => ({ t: 'roster', epoch: 2, round: 1, you: 0, arena: 'stadium', players, ...over });
 const phase = (p: PhaseMessage['phase'], remainingMs: number, round = 1): PhaseMessage => ({ t: 'phase', phase: p, round, remainingMs });
 const ko = (over: Partial<KoMessage>): KoMessage => ({ t: 'ko', tick: 100, victim: 1, killer: 0, assists: [], reason: 'damage', ...over });
 
@@ -31,7 +31,7 @@ describe('MatchState before and during the countdown', () => {
     m.onWelcome(welcome());
     m.onRoster(roster({ round: 3 }));
     m.onPhase(phase('countdown', 5000, 3));
-    expect(m.view()).toMatchObject({ phase: 'countdown', round: 3, clockLabel: 'Starts in', clock: '5', banner: { kind: 'countdown', title: '5', subtitle: 'Round 3 — get ready' } });
+    expect(m.view()).toMatchObject({ phase: 'countdown', round: 3, clockLabel: 'Starts in', clock: '5', banner: { kind: 'countdown', title: '5', subtitle: 'Round 3 · Stadium — get ready' } });
     clock.t += 1200;
     expect(m.view().banner!.title).toBe('4');
     clock.t += 3700;
@@ -46,10 +46,10 @@ describe('MatchState before and during the countdown', () => {
     m.onRoster(roster({ round: 2, epoch: 4 }));
     m.onPhase(phase('countdown', 5000, 2));
     clock.t += 3000;
-    expect(m.view().banner).toMatchObject({ title: '2', subtitle: 'Round 2 — get ready' });
+    expect(m.view().banner).toMatchObject({ title: '2', subtitle: 'Round 2 · Stadium — get ready' });
     m.onRoster(roster({ round: 2, epoch: 5 })); // somebody joined: the server rebuilds the world and starts the countdown again
     m.onPhase(phase('countdown', 5000, 2));
-    expect(m.view()).toMatchObject({ round: 2, clock: '5', banner: { kind: 'countdown', title: '5', subtitle: 'Round 2 — get ready' } });
+    expect(m.view()).toMatchObject({ round: 2, clock: '5', banner: { kind: 'countdown', title: '5', subtitle: 'Round 2 · Stadium — get ready' } });
   });
 
   it('tells a player who has no car yet that they join the next round', () => {
@@ -279,5 +279,85 @@ describe('MatchState results', () => {
     m.onWelcome(welcome({ you: -1, phase: phase('live', 90_000, 4), scores: [{ slot: 1, score: 500, kills: 3 }] }));
     expect(m.view()).toMatchObject({ phase: 'live', round: 4 });
     expect(m.view().board[0]).toMatchObject({ name: 'Bob', score: 500, kills: 3 });
+  });
+});
+
+describe('MatchState arena and vote', () => {
+  const counts = (over: Partial<Record<'stadium' | 'ice' | 'quarry' | 'port', number>> = {}) => ({ stadium: 0, ice: 0, quarry: 0, port: 0, ...over });
+
+  it('names the arena of the round in the countdown banner', () => {
+    const { m } = match();
+    m.onRoster(roster({ round: 2, arena: 'quarry' }));
+    m.onPhase(phase('countdown', 5000, 2));
+    expect(m.view().arena).toEqual({ id: 'quarry', name: 'Mud Quarry' });
+    expect(m.view().banner!.subtitle).toBe('Round 2 · Mud Quarry — get ready');
+  });
+
+  it('knows the arena a newcomer is dropped into', () => {
+    const { m } = match();
+    m.onWelcome(welcome({ arena: 'port', phase: phase('live', 60_000, 3) }));
+    expect(m.view().arena).toEqual({ id: 'port', name: 'Container Port' });
+  });
+
+  it('offers the four arenas to vote on only while the results show', () => {
+    const { m } = match();
+    m.onRoster(roster());
+    for (const p of ['countdown', 'live'] as const) {
+      m.onPhase(phase(p, 5000));
+      expect(m.view().vote).toBeNull();
+    }
+    m.onPhase(phase('results', 12_000));
+    const vote = m.view().vote!;
+    expect(vote.options.map((o) => [o.id, o.name, o.count, o.mine])).toEqual([
+      ['stadium', 'Stadium', 0, false],
+      ['ice', 'Frozen Lake', 0, false],
+      ['quarry', 'Mud Quarry', 0, false],
+      ['port', 'Container Port', 0, false],
+    ]);
+  });
+
+  it('shows the tally the server sends, and your own choice', () => {
+    const { m } = match();
+    m.onRoster(roster());
+    m.onPhase(phase('results', 12_000));
+    m.onVotes({ t: 'votes', counts: counts({ ice: 2, port: 1 }) });
+    expect(m.view().vote!.options.map((o) => o.count)).toEqual([0, 2, 0, 1]);
+    expect(m.vote('port')).toBe(true);
+    expect(m.view().vote!.options.map((o) => o.mine)).toEqual([false, false, false, true]);
+    expect(m.vote('quarry')).toBe(true); // a vote can be changed
+    expect(m.view().vote!.options.map((o) => o.mine)).toEqual([false, false, true, false]);
+  });
+
+  it('refuses a vote outside the results, and does not remember it', () => {
+    const { m } = match();
+    m.onRoster(roster());
+    m.onPhase(phase('live', 60_000));
+    expect(m.vote('ice')).toBe(false);
+    m.onPhase(phase('results', 12_000));
+    expect(m.view().vote!.options.some((o) => o.mine)).toBe(false);
+  });
+
+  it('forgets the vote and the tally when the next round is announced', () => {
+    const { m } = match();
+    m.onRoster(roster());
+    m.onPhase(phase('results', 12_000));
+    m.onVotes({ t: 'votes', counts: counts({ ice: 3 }) });
+    m.vote('ice');
+    m.onRoster(roster({ epoch: 3, round: 2, arena: 'ice' }));
+    m.onPhase(phase('results', 12_000, 2));
+    expect(m.view().vote!.options.map((o) => [o.count, o.mine])).toEqual([[0, false], [0, false], [0, false], [0, false]]);
+  });
+
+  it('starts a newcomer\'s results phase from the tally in the welcome', () => {
+    const { m } = match();
+    m.onWelcome(welcome({ phase: phase('results', 7000, 2), votes: counts({ quarry: 2 }) }));
+    expect(m.view().vote!.options.map((o) => o.count)).toEqual([0, 0, 2, 0]);
+  });
+
+  it('says in the results banner that the vote decides the next round', () => {
+    const { m } = match();
+    m.onRoster(roster());
+    m.onPhase(phase('results', 12_000));
+    expect(m.view().banner).toMatchObject({ kind: 'results', hint: 'Vote for the next arena · keys 1 to 4' });
   });
 });

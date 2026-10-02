@@ -68,29 +68,26 @@ export interface DriveTuning {
   STEER_SIGN: 1 | -1;
 }
 export const DRIVE: DriveTuning = {
-  ENGINE: 8000,
+  ENGINE: 8960,
   REVERSE_SCALE: 0.6,
   BRAKE: 55,
   HANDBRAKE: 30,
-  MAX_SPEED: 21,
+  MAX_SPEED: 23.5,
   MAX_STEER: 0.55,
   MAX_STEER_FAST: 0.25,
-  STEER_FADE_SPEED: 20,
+  STEER_FADE_SPEED: 22,
   STEER_SIGN: -1,
 };
 
+/**
+ * What every arena shares, and the Stadium's radius and wall thickness (its bowl, its floodlights and its tyre marks are dressed from them).
+ * The walls, obstacles, spawns and ground of each arena are layout data: `src/shared/arenas/<id>.json`.
+ */
 export const ARENA = {
-  /** Distance from the centre to the inner face of the wall ring (m). */
+  /** Distance from the centre to the inner face of the Stadium's wall ring (m). */
   RADIUS: 45,
-  WALL_SEGMENTS: 32,
-  WALL_HALF_HEIGHT: 1.5,
   WALL_HALF_THICKNESS: 1.0,
-  GROUND_HALF_EXTENT: 120,
-  SPAWN_RADIUS: 32,
   MAX_CARS: 8,
-  OBSTACLE_COUNT: 4,
-  OBSTACLE_RING_RADIUS: 14,
-  OBSTACLE_HALF: { x: 2.5, y: 0.75, z: 1.0 },
 } as const;
 
 /** Combat tuning. Impulses are in kN·s (1000 N·s), damage in HP, durations in simulation ticks (60 per second). */
@@ -111,7 +108,7 @@ export const COMBAT = {
   /** Impacts weaker than this (kN·s) do no damage. */
   MIN_IMPULSE: 1.5,
   /** damage = DAMAGE_SCALE * (impulse - MIN_IMPULSE) ^ DAMAGE_EXPONENT, before the multipliers. */
-  DAMAGE_SCALE: 0.295,
+  DAMAGE_SCALE: 0.236,
   DAMAGE_EXPONENT: 1.5,
   /** Applied to the zone of the car that is hit: backing into an opponent is the smart move. */
   ZONE_MULTIPLIER: { front: 1.15, rear: 0.9, left: 1, right: 1 },
@@ -140,7 +137,8 @@ export const COMBAT = {
 export const ROUND = {
   COUNTDOWN_TICKS: 5 * 60,
   LIVE_TICKS: 4 * 60 * 60,
-  RESULTS_TICKS: 8 * 60,
+  /** The results screen is also the vote for the next arena. */
+  RESULTS_TICKS: 12 * 60,
   /** Bots fill a room up to this many cars; they step aside as humans join. */
   BOT_FILL: 4,
   /** A player who joins during a countdown restarts it (so a burst of joiners plays together), at most this often per round. */
@@ -148,8 +146,8 @@ export const ROUND = {
 } as const;
 
 export const NET = {
-  /** 3: the welcome carries the round's latest hits (`dents`). 2: rounds, hit/ko/scores/results messages, `you` in the roster. */
-  PROTOCOL_VERSION: 3,
+  /** 4: arenas: `vote` (client) and `votes` (server), `arena` in the welcome and the roster, `votes` in the welcome. 3: the welcome carries the round's latest hits (`dents`). 2: rounds, hit/ko/scores/results messages, `you` in the roster. */
+  PROTOCOL_VERSION: 4,
   /** The welcome message carries this many of the round's latest hits (a newcomer replays them to dent the cars). */
   MAX_HIT_LOG: 64,
   /** Simulation ticks per snapshot: 2 => 30 Hz. */

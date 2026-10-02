@@ -1,3 +1,4 @@
+import { DEFAULT_ARENA, type ArenaDef } from '../../shared/arenas';
 import { ARENA, COMBAT } from '../../shared/constants';
 import { NEUTRAL_INPUT, PARKED_INPUT, quantizeInput, type CarInput } from '../../shared/input';
 import { quatConjugate, quatMul, quatNormalize, vadd, vlen, vsub } from '../../shared/math';
@@ -23,8 +24,8 @@ export interface PredictorOptions {
   stallTicks?: number;
   /** First sequence number is startSeq + 1 (tests use it to exercise the u32 wrap). */
   startSeq?: number;
-  /** Builds the local world for the given slots; tests inject a failing one. Defaults to `new Simulation(slots)`. */
-  createSimulation?: (slots: number[]) => Simulation;
+  /** Builds the local world for the given slots in the round's arena; tests inject a failing one. Defaults to `new Simulation(slots, { arena })`. */
+  createSimulation?: (slots: number[], arena: ArenaDef) => Simulation;
 }
 
 export interface Correction {
@@ -125,7 +126,9 @@ export class Predictor {
   private readonly historySize: number;
   private readonly interactionRange: number;
   private readonly stallTicks: number;
-  private readonly createSimulation: (slots: number[]) => Simulation;
+  private readonly createSimulation: (slots: number[], arena: ArenaDef) => Simulation;
+  /** The arena of the current world (from the roster or the welcome); the Stadium until told otherwise. */
+  private arena: ArenaDef = DEFAULT_ARENA;
   private sim: Simulation | null = null;
   private epoch: number | null = null;
   private synced = false;
@@ -174,7 +177,7 @@ export class Predictor {
     this.historySize = Math.max(1, Math.floor(options.historySize ?? DEFAULTS.historySize));
     this.interactionRange = options.interactionRange ?? DEFAULTS.interactionRange;
     this.stallTicks = Math.max(1, Math.floor(options.stallTicks ?? DEFAULTS.stallTicks));
-    this.createSimulation = options.createSimulation ?? ((slots) => new Simulation(slots));
+    this.createSimulation = options.createSimulation ?? ((slots, arena) => new Simulation(slots, { arena }));
     this.seq = (options.startSeq ?? 0) >>> 0;
   }
 
@@ -212,10 +215,12 @@ export class Predictor {
   /**
    * Starts accepting snapshots for a new world, in which the local car has slot `mySlot` (default: unchanged, -1 = none).
    * The world itself is built from the first snapshot (it lists exactly the cars the server simulates). Inputs not yet
-   * acknowledged are kept so they can be replayed, and the input numbering carries on.
+   * acknowledged are kept so they can be replayed, and the input numbering carries on. `arena` is the one the round is played
+   * in (default: the same as before).
    */
-  beginWorld(epoch: number, mySlot: number = this.mySlot): void {
+  beginWorld(epoch: number, mySlot: number = this.mySlot, arena: ArenaDef = this.arena): void {
     this.mySlot = mySlot;
+    this.arena = arena;
     this.epoch = epoch & 0xff;
     if (this.sim) this.counters.worldRebuilds++;
     this.disposeSim();
@@ -298,7 +303,7 @@ export class Predictor {
       }
       let next: Simulation;
       try {
-        next = this.createSimulation(slots); // the current world is untouched if this throws
+        next = this.createSimulation(slots, this.arena); // the current world is untouched if this throws
       } catch (err) {
         this.failure = err instanceof Error ? err.message : String(err);
         this.counters.ignored++;

@@ -1,3 +1,4 @@
+import { getArena, DEFAULT_ARENA, type ArenaDef, type ArenaId } from '../shared/arenas';
 import { ARENA, NET, PHYSICS, ROUND } from '../shared/constants';
 import { PARKED_INPUT, type CarInput } from '../shared/input';
 import {
@@ -16,12 +17,15 @@ import {
   type ScoreRow,
   type ServerMessage,
   type SnapshotCar,
+  type VoteCounts,
 } from '../shared/protocol';
+import { mulberry32 } from '../shared/random';
 import { Simulation } from '../shared/sim';
 import type { CarState } from '../shared/types';
 import { BOT_COLORS, BOT_NAMES, BotBrain, type BotTarget } from './bots';
 import type { Player } from './player';
 import { RoundState } from './round';
+import { chooseArena, tally } from './vote';
 
 /** How long each phase of a round lasts, in simulation ticks. */
 export interface RoomRules {
@@ -58,6 +62,8 @@ interface Participant {
 
 const MS_PER_TICK = 1000 / PHYSICS.TICK_RATE;
 const SCORES_EVERY_TICKS = 15;
+/** The vote's tally goes out at most this often (four times a second). */
+const VOTES_EVERY_TICKS = 15;
 
 /**
  * One arena instance, played in rounds: COUNTDOWN (a fresh world, cars frozen) -> LIVE (until one car is left, the time
@@ -76,6 +82,12 @@ export class Room {
   /** The cars of the running round; the index is the slot. Includes players who have left since. */
   private roundCars: Participant[] = [];
   private brains = new Map<number, BotBrain>();
+  /** The arena of the running (or coming) round. */
+  private arena: ArenaDef = DEFAULT_ARENA;
+  /** Who voted for what during the results phase. A leaver's vote goes with them. */
+  private readonly votes = new Map<Player, ArenaId>();
+  private votesDirty = false;
+  private votesSentAt = 0;
   private sim: Simulation | null = null;
   private state: RoundState | null = null;
   private folded = false;
@@ -137,11 +149,21 @@ export class Room {
   }
 
   /** What a player who has just joined needs to know: their slot (-1 = watching), the cars, the phase and the scores. */
-  greeting(player: Player): { you: number; players: PlayerInfo[]; phase: PhaseMessage | null; scores: ScoreRow[]; dents: HitMessage[] } {
+  greeting(player: Player): {
+    you: number;
+    players: PlayerInfo[];
+    arena: ArenaId;
+    votes: VoteCounts;
+    phase: PhaseMessage | null;
+    scores: ScoreRow[];
+    dents: HitMessage[];
+  } {
     const me = this.participants.find((p) => p.player === player);
     return {
       you: me?.slot ?? -1,
       players: this.playerInfos(),
+      arena: this.arena.id,
+      votes: this.voteCounts(),
       phase: this.sim ? this.phaseMessage() : null,
       scores: this.scoreRows(),
       dents: [...this.hitLog],
@@ -160,9 +182,22 @@ export class Room {
     return true;
   }
 
+  /** The arena vote: counts during the results phase for anyone in the room (with or without a car); the last vote of a player stands. */
+  vote(player: Player, arena: ArenaId): void {
+    if (this.phase !== 'results' || !this.sim || !this.participants.some((p) => p.player === player)) return;
+    if (this.votes.get(player) === arena) return;
+    this.votes.set(player, arena);
+    this.votesDirty = true;
+  }
+
+  private voteCounts(): VoteCounts {
+    return tally(this.votes.values());
+  }
+
   removePlayer(player: Player): void {
     const index = this.participants.findIndex((p) => p.player === player);
     if (index < 0) return;
+    if (this.votes.delete(player)) this.votesDirty = true;
     const leaving = this.participants[index]!;
     const hadCar = leaving.slot >= 0;
     if (this.state && hadCar && this.phase !== 'results') {
@@ -219,6 +254,7 @@ export class Room {
       this.checkEnd(state);
     }
     this.flushScores();
+    this.flushVotes();
     if (sim.tick % NET.SNAPSHOT_EVERY === 0) this.broadcastSnapshot(sim, state);
   }
 
@@ -242,7 +278,13 @@ export class Room {
     this.restartPending = false;
     this.seatedLeft = false;
     this.restarts = restart ? this.restarts + 1 : 0;
-    if (!restart) this.round++;
+    if (!restart) {
+      this.round++;
+      // the vote decides (a first round, or a room where nobody voted, is a draw among all four); the same seed gives the same draw
+      this.arena = getArena(chooseArena(this.voteCounts(), mulberry32((this.seed + this.round * 15_485_863) >>> 0)));
+      this.votes.clear();
+      this.votesDirty = false;
+    }
     this.epoch = (this.epoch + 1) & 0xff;
     const humans = this.humans();
     const inRound = humans.slice(0, ARENA.MAX_CARS);
@@ -255,10 +297,10 @@ export class Room {
     this.roundCars.forEach((p, slot) => {
       p.slot = slot;
     });
-    this.brains = new Map(bots.map((b, i) => [b.slot, new BotBrain((this.seed + this.round * 7919 + i * 104_729) >>> 0)] as const));
+    this.brains = new Map(bots.map((b, i) => [b.slot, new BotBrain((this.seed + this.round * 7919 + i * 104_729) >>> 0, undefined, this.arena)] as const));
     const slots = this.roundCars.map((_, slot) => slot);
-    this.sim = new Simulation(slots);
-    this.state = new RoundState(slots);
+    this.sim = new Simulation(slots, { arena: this.arena });
+    this.state = new RoundState(slots, this.arena);
     this.folded = false;
     this.hitLog = [];
     this.phase = 'countdown';
@@ -267,7 +309,7 @@ export class Room {
     for (const p of humans) {
       p.player!.slot = p.slot;
       p.player!.resetInputState();
-      p.player!.send({ t: 'roster', epoch: this.epoch, round: this.round, you: p.slot, players: cars });
+      p.player!.send({ t: 'roster', epoch: this.epoch, round: this.round, you: p.slot, arena: this.arena.id, players: cars });
     }
     this.broadcast(this.phaseMessage());
     this.scoresDirty = true;
@@ -329,7 +371,11 @@ export class Room {
     this.broadcast({ t: 'results', round: this.round, winner, reason: winner < 0 ? 'draw' : reason, rows });
     this.phase = 'results';
     this.phaseTicks = 0;
+    this.votes.clear();
+    this.votesDirty = false;
+    this.votesSentAt = this.ticks;
     this.broadcast(this.phaseMessage());
+    this.broadcast({ t: 'votes', counts: this.voteCounts() }); // an empty tally opens the vote
     // the standings with this round folded in go out at once, throttle or not: the board on screen must show what the results say
     this.scoresSentAt = this.ticks;
     this.broadcast({ t: 'scores', rows: this.scoreRows() });
@@ -368,6 +414,13 @@ export class Room {
     this.scoresDirty = false;
     this.scoresSentAt = this.ticks;
     this.broadcast({ t: 'scores', rows: this.scoreRows() });
+  }
+
+  private flushVotes(): void {
+    if (!this.votesDirty || this.ticks - this.votesSentAt < VOTES_EVERY_TICKS) return;
+    this.votesDirty = false;
+    this.votesSentAt = this.ticks;
+    this.broadcast({ t: 'votes', counts: this.voteCounts() });
   }
 
   private broadcastSnapshot(sim: Simulation, state: RoundState): void {

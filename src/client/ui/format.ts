@@ -1,5 +1,5 @@
 import { clamp } from '../../shared/math';
-import type { BoardRow } from '../game/matchState';
+import type { BoardRow, MatchView } from '../game/matchState';
 
 /** "#rrggbb" from a 24-bit colour. */
 export const hexColor = (c: number): string => `#${(Math.max(0, Math.min(0xffffff, Math.floor(c))) >>> 0).toString(16).padStart(6, '0')}`;
@@ -40,4 +40,15 @@ export function boardSignature(rows: readonly BoardRow[], detailed: boolean): st
       return detailed ? [...drawn, r.kills, Math.ceil(r.hp)] : drawn;
     }),
   ]);
+}
+
+/** "no votes", "1 vote", "3 votes" under an arena card. */
+export const voteLabel = (count: number): string => {
+  const n = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  return n === 0 ? 'no votes' : n === 1 ? '1 vote' : `${n} votes`;
+};
+
+/** Everything the vote panel draws, as a string: the panel is rebuilt only when this changes. Empty when there is no vote. */
+export function voteSignature(vote: MatchView['vote']): string {
+  return vote ? JSON.stringify(vote.options.map((o) => [o.id, o.name, o.count, o.mine])) : '';
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardRow } from '../../src/client/game/matchState';
-import { boardSignature, hexColor, hpColor, once, zoneColor } from '../../src/client/ui/format';
+import { boardSignature, hexColor, hpColor, once, voteLabel, voteSignature, zoneColor } from '../../src/client/ui/format';
 
 describe('hexColor', () => {
   it('writes a 24-bit colour as #rrggbb, padded, and clamps nonsense', () => {
@@ -90,5 +90,29 @@ describe('boardSignature', () => {
     expect(boardSignature([row({ hp: 70 })], true)).not.toBe(base);
     expect(boardSignature([row({ hp: 79.2 })], true)).toBe(base); // 80 HP shown either way
     expect(base).not.toBe(boardSignature([row()], false));
+  });
+});
+
+describe('the vote panel', () => {
+  const option = (id: 'stadium' | 'ice' | 'quarry' | 'port', count: number, mine = false) => ({ id, name: id, count, mine });
+  const four = (over: Array<[number, boolean]> = []) => ({
+    options: (['stadium', 'ice', 'quarry', 'port'] as const).map((id, i) => option(id, over[i]?.[0] ?? 0, over[i]?.[1] ?? false)),
+  });
+
+  it('says how many votes an arena has', () => {
+    expect(voteLabel(0)).toBe('no votes');
+    expect(voteLabel(1)).toBe('1 vote');
+    expect(voteLabel(3)).toBe('3 votes');
+    expect(voteLabel(Number.NaN)).toBe('no votes');
+    expect(voteLabel(-2)).toBe('no votes');
+  });
+
+  it('is rebuilt only when a count, your choice or the panel itself changes', () => {
+    expect(voteSignature(null)).toBe('');
+    const a = voteSignature(four());
+    expect(voteSignature(four())).toBe(a);
+    expect(voteSignature(four([[0, false], [1, false]]))).not.toBe(a);
+    expect(voteSignature(four([[0, false], [0, true]]))).not.toBe(a);
+    expect(a).not.toBe('');
   });
 });

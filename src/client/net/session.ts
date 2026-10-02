@@ -1,3 +1,4 @@
+import type { ArenaDef } from '../../shared/arenas';
 import type { CarInput } from '../../shared/input';
 import { SNAP_FLAG_ALIVE, SNAP_FLAG_GROUNDED, SNAP_FLAG_HANDBRAKE, type Phase, type Snapshot } from '../../shared/protocol';
 import type { Quat, Vec3 } from '../../shared/types';
@@ -85,25 +86,25 @@ export class ClientSession {
   }
 
   /** `slot` is the local car's slot in the running round, or -1 while the player is watching. */
-  onWelcome(slot: number, epoch: number, phase: Phase | null = null): void {
+  onWelcome(slot: number, epoch: number, phase: Phase | null = null, arena?: ArenaDef): void {
     this.epoch = epoch;
     this.currentPhase = phase;
     this.interpolator.reset(epoch);
     if (this.current === 'predict') {
       this.world?.dispose();
       this.world = new PredictedWorld(slot, this.options.world);
-      this.world.beginWorld(epoch);
+      this.world.beginWorld(epoch, slot, arena);
       this.world.setLive(phase === 'live');
     }
   }
 
   /** A new round's world: every buffered or predicted state belongs to the old one, and the local car may have a new slot. */
-  onRoster(epoch: number, you: number): void {
+  onRoster(epoch: number, you: number, arena?: ArenaDef): void {
     this.epoch = epoch;
     this.wasStalled = false;
     this.currentPhase = 'countdown'; // a roster always opens with the countdown; the phase message repeats it
     this.interpolator.reset(epoch);
-    this.world?.beginWorld(epoch, you);
+    this.world?.beginWorld(epoch, you, arena);
     this.world?.setLive(false);
   }
 

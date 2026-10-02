@@ -1,5 +1,6 @@
 import { ARENA, PHYSICS } from './constants';
 import { buildArena, spawnPose, type ArenaOptions } from './arena';
+import { DEFAULT_ARENA, type ArenaDef } from './arenas';
 import { quantizeInput, type CarInput } from './input';
 import { RAPIER, physicsReady } from './physics';
 import type { CarState, Vec3, WheelPose } from './types';
@@ -30,6 +31,8 @@ const scratchB: Vec3 = { x: 0, y: 0, z: 0 };
 export class Simulation {
   /** Sorted, de-duplicated slot numbers of the cars in this world. */
   readonly slots: readonly number[];
+  /** The arena this world was built from. */
+  readonly arena: ArenaDef;
   /** Number of completed steps. */
   tick = 0;
   private readonly world: RAPIER.World;
@@ -49,11 +52,12 @@ export class Simulation {
       if (!Number.isInteger(s) || s < 0 || s >= ARENA.MAX_CARS) throw new RangeError(`invalid slot ${s}`);
     }
     this.slots = unique;
+    this.arena = options.arena ?? DEFAULT_ARENA;
     this.world = new RAPIER.World({ x: 0, y: -PHYSICS.GRAVITY, z: 0 });
     this.world.timestep = PHYSICS.DT;
-    this.groundHandle = buildArena(this.world, options).ground;
+    this.groundHandle = buildArena(this.world, { ...options, arena: this.arena }).ground;
     unique.forEach((slot, index) => {
-      const rig = createCarRig(this.world, slot, spawnPose(index, unique.length));
+      const rig = createCarRig(this.world, slot, spawnPose(index, unique.length, this.arena), this.arena.ground);
       this.rigs.set(slot, rig);
       this.ordered.push(rig);
       this.slotOfCollider.set(rig.collider.handle, slot);

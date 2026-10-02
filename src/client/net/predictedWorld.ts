@@ -1,3 +1,4 @@
+import type { ArenaDef } from '../../shared/arenas';
 import type { CarInput } from '../../shared/input';
 import type { Snapshot } from '../../shared/protocol';
 import type { Quat, Vec3 } from '../../shared/types';
@@ -57,8 +58,8 @@ export class PredictedWorld {
   }
 
   /** A new world (welcome or roster message), in which the local car has slot `mySlot`: forget predictions and pending corrections. */
-  beginWorld(epoch: number, mySlot: number = this.mySlot): void {
-    this.predictor.beginWorld(epoch, mySlot);
+  beginWorld(epoch: number, mySlot: number = this.mySlot, arena?: ArenaDef): void {
+    this.predictor.beginWorld(epoch, mySlot, arena);
     this.stats.mySlot = mySlot;
     this.smoother.clear();
   }

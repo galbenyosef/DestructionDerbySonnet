@@ -10,15 +10,16 @@ Online 3D demolition-derby arena for the browser: TypeScript, three.js, the dete
 
 ## Layout
 
-- `src/shared` — what server and client must agree on: constants (all tuning), protocol, the simulation (`sim.ts`), vehicle, arena, damage.
+- `src/shared` — what server and client must agree on: constants (all tuning), protocol, the simulation (`sim.ts`), vehicle, arena (`arena.ts` builds the physics from an `ArenaDef`; `arenas.ts` loads the four layouts `arenas/<id>.json`, which `art/arenas/layouts.py` writes), damage.
 - `src/server` — `lobby.ts` and `room.ts` (rounds), `round.ts` and `rules.ts` (damage, eliminations), `bots.ts`, `guard.ts` and `limits.ts` (abuse limits), `app.ts` (HTTP and WebSocket), `config.ts` (environment variables).
 - `src/client` — `net/` (connection, prediction with rollback, interpolation; no DOM), `game/` (scene, cars, effects, audio, input; `matchState.ts` and the other DOM-free files are tested in Node), `ui/` (menu, HUD). `tests/` mirrors `src/`; `scripts/` holds the bot, load test and smoke check.
 
 ## Rules that keep the game consistent
 
 - Axes: forward is +X, up is +Y, right is +Z. The simulation runs at a fixed 1/60 s. Inputs are quantized before they are applied, on both sides.
-- The shared simulation is deterministic: no `Math.random`, `Date.now` or `performance.now` in `src/shared`. `npm run hash` must keep printing the same hash in Node and in a browser (`await __derby.simHash()`); if a change moves it, the change altered the physics on purpose or by mistake, so say so.
-- Tuning lives only in `src/shared/constants.ts`; it is frozen at run time except in the offline `?sandbox`.
+- The shared simulation is deterministic: no `Math.random`, `Date.now` or `performance.now` in `src/shared`. `npm run hash -- 600 <arena>` must keep printing the same hash in Node and in a browser (`await __derby.simHash(600, '<arena>')`), for each of the four arenas (recorded in `tests/determinism.test.ts`); if a change moves it, the change altered the physics on purpose or by mistake, so say so.
+- Tuning lives only in `src/shared/constants.ts`; it is frozen at run time except in the offline `?sandbox`. What an arena changes (grip, drag, power of its ground) is in its layout and is read when the cars are built.
+- Arena layouts are data: change `art/arenas/layouts.py`, run it, commit the JSON it writes. `tests/arenas.test.ts` checks every layout (spawns, bounds, walls all round).
 - Any change to what goes over the wire changes `NET.PROTOCOL_VERSION`; the server refuses other versions, and the scripts read the constant.
 - Effects (dents, parts, particles, sound, shake) are cosmetic: they read server messages and snapshots and never touch the simulation or the rules.
 - The client's local impacts come from the prediction's live tick, never from a replay (or they would fire twice).

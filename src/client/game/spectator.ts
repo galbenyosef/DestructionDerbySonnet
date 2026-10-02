@@ -1,3 +1,4 @@
+import { clampToBounds, DEFAULT_ARENA, type Bounds } from '../../shared/arenas';
 import { ARENA } from '../../shared/constants';
 import { clamp, vlerp } from '../../shared/math';
 import type { Vec3 } from '../../shared/types';
@@ -35,18 +36,14 @@ export const cycleDirection = (code: string): 1 | -1 | 0 => CYCLE_KEYS.get(code)
 const ORBIT_RADIUS = 13;
 const ORBIT_HEIGHT = 6;
 const ORBIT_SPEED = 0.25; // rad/s: a lap every 25 s
+/** How far inside the playable area's edge the camera stays (m). */
+const CAMERA_INSET = 1.5;
 /** The camera never goes further from the arena's centre than this: outside the barrier all it would see is the back of the wall. */
-export const MAX_CAMERA_RADIUS = ARENA.RADIUS - 1.5;
+export const MAX_CAMERA_RADIUS = ARENA.RADIUS - CAMERA_INSET;
 
-/** Where to put the camera to look at a car from `angle` radians around it (0 = on the +X side). */
-export function computeOrbitView(target: Vec3, angle: number): ChaseView {
-  let x = target.x + Math.cos(angle) * ORBIT_RADIUS;
-  let z = target.z + Math.sin(angle) * ORBIT_RADIUS;
-  const r = Math.hypot(x, z);
-  if (r > MAX_CAMERA_RADIUS) {
-    x *= MAX_CAMERA_RADIUS / r;
-    z *= MAX_CAMERA_RADIUS / r;
-  }
+/** Where to put the camera to look at a car from `angle` radians around it (0 = on the +X side), inside `bounds` (the arena's). */
+export function computeOrbitView(target: Vec3, angle: number, bounds: Bounds = DEFAULT_ARENA.bounds): ChaseView {
+  const { x, z } = clampToBounds(bounds, target.x + Math.cos(angle) * ORBIT_RADIUS, target.z + Math.sin(angle) * ORBIT_RADIUS, CAMERA_INSET);
   return {
     position: { x, y: target.y + ORBIT_HEIGHT, z },
     lookAt: { x: target.x, y: target.y + 0.8, z: target.z },
@@ -60,6 +57,12 @@ export class SpectatorCamera {
   private angle = Math.PI;
   private position: Vec3 | null = null;
   private lookAt: Vec3 | null = null;
+  private bounds: Bounds = DEFAULT_ARENA.bounds;
+
+  /** The playable area of the round's arena, which the camera stays inside. */
+  setBounds(bounds: Bounds): void {
+    this.bounds = bounds;
+  }
 
   /** Slot of the car being watched (-1: none). */
   get watching(): number {
@@ -84,7 +87,7 @@ export class SpectatorCamera {
     const car = cars.find((c) => c.slot === this.target);
     if (!car) return null;
     this.angle += Math.max(0, Number.isFinite(dt) ? dt : 0) * ORBIT_SPEED;
-    const want = computeOrbitView(car.pos, this.angle);
+    const want = computeOrbitView(car.pos, this.angle, this.bounds);
     if (!this.position || !this.lookAt) {
       this.position = want.position;
       this.lookAt = want.lookAt;

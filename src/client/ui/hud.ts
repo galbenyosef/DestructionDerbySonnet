@@ -1,6 +1,7 @@
+import type { ArenaId } from '../../shared/arenas';
 import type { Zone } from '../../shared/types';
 import type { FeedItem, MatchView } from '../game/matchState';
-import { boardSignature, hexColor, hpColor, once, zoneColor } from './format';
+import { boardSignature, hexColor, hpColor, once, voteLabel, voteSignature, zoneColor } from './format';
 
 export interface Hud {
   setRoom(code: string, isPublic: boolean): void;
@@ -11,6 +12,8 @@ export interface Hud {
   setStatsVisible(visible: boolean): void;
   /** Shows a short message near the bottom of the screen for a few seconds. */
   showNotice(text: string): void;
+  /** What to do when the player picks an arena on the vote panel (a click on a card). */
+  setVoteHandler(handler: (arena: ArenaId) => void): void;
   dispose(): void;
 }
 
@@ -59,6 +62,8 @@ export function createHud(root: HTMLElement): Hud {
   const bannerTitle = el('div', 'banner-title', banner);
   const bannerSub = el('div', 'banner-sub', banner);
   const bannerHint = el('div', 'banner-hint', banner);
+  const vote = el('div', 'hud-vote', wrap);
+  vote.hidden = true;
   const flash = el('div', 'hud-flash', wrap);
   const stats = el('div', 'hud-stats', wrap);
   stats.hidden = true;
@@ -106,6 +111,27 @@ export function createHud(root: HTMLElement): Hud {
   const setFlash = once((opacity: string) => {
     flash.style.opacity = opacity;
   });
+
+  let voteHandler: (arena: ArenaId) => void = () => undefined;
+  let voteKey = '';
+  const drawVote = (view: MatchView): void => {
+    const key = voteSignature(view.vote);
+    if (key === voteKey) return;
+    voteKey = key;
+    vote.hidden = view.vote === null;
+    vote.replaceChildren();
+    if (!view.vote) return;
+    el('div', 'vote-title', vote).textContent = 'Vote for the next arena';
+    const cards = el('div', 'vote-cards', vote);
+    view.vote.options.forEach((o, i) => {
+      const card = el('button', `vote-card${o.mine ? ' mine' : ''}`, cards);
+      card.type = 'button';
+      el('span', 'vote-key', card).textContent = String(i + 1);
+      el('span', 'vote-name', card).textContent = o.name;
+      el('span', 'vote-count', card).textContent = voteLabel(o.count);
+      card.addEventListener('click', () => voteHandler(o.id));
+    });
+  };
 
   let boardKey = '';
   const feedNodes = new Map<number, { node: HTMLElement; setOpacity: (opacity: string) => void }>();
@@ -204,6 +230,7 @@ export function createHud(root: HTMLElement): Hud {
         setText(bannerSub, view.banner.subtitle);
         setText(bannerHint, view.banner.hint);
       }
+      drawVote(view);
       setFlash(view.flash.toFixed(2));
     },
     setStats(text) {
@@ -213,6 +240,9 @@ export function createHud(root: HTMLElement): Hud {
       stats.hidden = !visible;
     },
     showNotice: notify,
+    setVoteHandler(handler) {
+      voteHandler = handler;
+    },
     dispose() {
       if (noticeTimer) clearTimeout(noticeTimer);
       root.replaceChildren();

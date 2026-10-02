@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ARENAS, boundsClearance } from '../../src/shared/arenas';
 import { MAX_CAMERA_RADIUS, SpectatorCamera, computeOrbitView, cycleDirection, nextTarget, type Followable } from '../../src/client/game/spectator';
 import { vlen, vsub } from '../../src/shared/math';
 
@@ -70,6 +71,32 @@ describe('computeOrbitView', () => {
     }
     const outside = computeOrbitView(target, 0); // straight out over the wall: pulled back in
     expect(Math.hypot(outside.position.x, outside.position.z)).toBeCloseTo(MAX_CAMERA_RADIUS, 9);
+  });
+});
+
+describe('computeOrbitView in other arenas', () => {
+  it('keeps the camera inside a rectangular yard, a metre and a half from its wall', () => {
+    for (const target of [{ x: 40, y: 1, z: 0 }, { x: -40, y: 1, z: 28 }, { x: 0, y: 1, z: -30 }]) {
+      for (const angle of [0, 1, 2, 3, 4, 5]) {
+        const v = computeOrbitView(target, angle, ARENAS.port.bounds);
+        expect(boundsClearance(ARENAS.port.bounds, v.position.x, v.position.z)).toBeGreaterThanOrEqual(1.5 - 1e-6);
+      }
+    }
+  });
+
+  it('lets the camera go further out on the wider lake than in the Stadium', () => {
+    const target = { x: 44, y: 1, z: 0 };
+    const lake = computeOrbitView(target, 0, ARENAS.ice.bounds);
+    const stadium = computeOrbitView(target, 0);
+    expect(Math.hypot(lake.position.x, lake.position.z)).toBeGreaterThan(Math.hypot(stadium.position.x, stadium.position.z));
+  });
+
+  it('is told the arena of each round by the spectator camera', () => {
+    const cam = new SpectatorCamera();
+    cam.setBounds(ARENAS.port.bounds);
+    const cars = [{ slot: 0, alive: true, visible: true, pos: { x: 44, y: 1, z: 0 } }];
+    const v = cam.view(cars, 0.1)!;
+    expect(boundsClearance(ARENAS.port.bounds, v.position.x, v.position.z)).toBeGreaterThanOrEqual(1.5 - 1e-6);
   });
 });
 

@@ -8,6 +8,16 @@ export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t
 export const round3 = (v: number): number => Math.round(v * 1e3) / 1e3;
 export const round6 = (v: number): number => Math.round(v * 1e6) / 1e6;
 
+/** Rotation by `pitch` about the box's own Z axis (a ramp's slope), then by `yaw` about +Y. With no pitch it is exactly `quatFromYaw`. */
+export function quatFromYawPitch(yaw: number, pitch: number): Quat {
+  if (!pitch) return quatFromYaw(yaw);
+  const sy = Math.sin(yaw / 2);
+  const cy = Math.cos(yaw / 2);
+  const sp = Math.sin(pitch / 2);
+  const cp = Math.cos(pitch / 2);
+  return quatNormalize({ x: round6(sy * sp), y: round6(sy * cp), z: round6(cy * sp), w: round6(cy * cp) });
+}
+
 /** Wraps an angle into [-pi, pi). */
 export const wrapPi = (a: number): number => {
   const twoPi = Math.PI * 2;

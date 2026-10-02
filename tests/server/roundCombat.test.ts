@@ -3,6 +3,7 @@ import { COMBAT } from '../../src/shared/constants';
 import { quatFromYaw } from '../../src/shared/math';
 import { initPhysics } from '../../src/shared/physics';
 import type { HitMessage, KoMessage } from '../../src/shared/protocol';
+import { ARENAS } from '../../src/shared/arenas';
 import { Simulation } from '../../src/shared/sim';
 import type { CarState } from '../../src/shared/types';
 import { RoundState, type StepEvents } from '../../src/server/round';
@@ -58,7 +59,7 @@ describe('RoundState.step: impacts', () => {
     for (const h of hits) {
       expect(h.zone).toBe('front');
       expect(h.attacker).toBe(h.victim === 0 ? 1 : 0);
-      expect(h.dmg).toBeGreaterThan(22);
+      expect(h.dmg).toBeGreaterThan(17.5);
       expect(h.dmg).toBeLessThan(29);
       expect(h.hp).toBeCloseTo(100 - h.dmg, 1);
       expect(h.j).toBeGreaterThan(17);
@@ -225,6 +226,23 @@ describe('RoundState.step: eliminations', () => {
     expect(allFinite(sim.getState(0))).toBe(true); // replaced within the same tick, before the snapshot is built
     run(300);
     expect([0, 1].every((slot) => allFinite(sim.getState(slot)))).toBe(true);
+  });
+
+  it('plays by the arena it is given: bounds and the place a broken car is put back', () => {
+    const sim = new Simulation([0, 1], { arena: ARENAS.port });
+    sims.push(sim);
+    sim.setState(0, still(-20, 0));
+    sim.setState(1, still(20, 0, Math.PI, 3));
+    const state = new RoundState([0, 1], ARENAS.port);
+    sim.setState(0, { ...still(0, 0), pos: { x: Number.NaN, y: 1.07, z: 0 } });
+    sim.step();
+    const events = state.step(sim.tick, sim);
+    expect(events.kos).toMatchObject([{ victim: 0, reason: 'bounds' }]);
+    const back = sim.getState(0).pos;
+    expect(back).toMatchObject({ x: -12, z: -26 }); // the port's first spawn, not a point of the Stadium's ring
+    sim.setState(1, still(20, 36.5, 0, 0));
+    sim.step();
+    expect(state.step(sim.tick, sim).kos).toMatchObject([{ victim: 1, reason: 'bounds' }]); // 3.5 m beyond the yard's wall
   });
 
   it('also replaces a wreck whose body goes to NaN later', () => {

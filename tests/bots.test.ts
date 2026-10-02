@@ -4,6 +4,7 @@ import { quatFromYaw } from '../src/shared/math';
 import { initPhysics } from '../src/shared/physics';
 import { Simulation } from '../src/shared/sim';
 import type { CarState } from '../src/shared/types';
+import { ARENAS } from '../src/shared/arenas';
 import { BOT_COLORS, BOT_NAMES, BotBrain, type BotTarget, type BotView } from '../src/server/bots';
 
 beforeAll(async () => {
@@ -66,6 +67,17 @@ describe('BotBrain decisions', () => {
     const out = new BotBrain(1, 1).think({ state: nearWall, targets: [target(1, ARENA.RADIUS - 5, 20)] });
     expect(Math.abs(out.steer)).toBeGreaterThan(0.6);
     expect(out.throttle).toBeLessThanOrEqual(0.7);
+  });
+
+  it('keeps off the wall of a rectangular arena, where the middle is nearer than the circle says', () => {
+    // the Container Port's wall is at z = 33: this spot is 30 m from the middle, well inside the Stadium's circle, and 11 m ahead is the wall
+    const nearWall = state(-20, 23, -Math.PI / 2, 10); // facing +Z, towards it
+    const view = { state: nearWall, targets: [target(1, -20, 60)] };
+    const port = new BotBrain(1, 1, ARENAS.port).think(view);
+    expect(Math.abs(port.steer)).toBeGreaterThan(0.6);
+    expect(port.throttle).toBeLessThanOrEqual(0.7);
+    const stadium = new BotBrain(1, 1).think(view);
+    expect(Math.abs(stadium.steer)).toBeLessThan(0.3); // with the circle's numbers there is still room
   });
 
   it('backs out turning the other way after a second of pushing without moving, then drives on', () => {

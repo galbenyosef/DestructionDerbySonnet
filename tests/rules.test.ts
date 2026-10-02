@@ -3,6 +3,7 @@ import { ARENA, COMBAT } from '../src/shared/constants';
 import { quatFromYaw } from '../src/shared/math';
 import type { CarState } from '../src/shared/types';
 import { CarWatch } from '../src/server/rules';
+import { ARENAS } from '../src/shared/arenas';
 
 const rolling = (over: Partial<CarState> = {}): CarState => ({
   pos: { x: 0, y: 1.07, z: 0 },
@@ -57,6 +58,16 @@ describe('CarWatch elimination rules', () => {
     expect(w.update(rolling({ pos: { x: ARENA.RADIUS + COMBAT.BOUNDS_MARGIN - 0.1, y: 1, z: 0 } }), true).fault).toBeNull();
     expect(w.update(rolling({ pos: { x: 0, y: 1, z: -(ARENA.RADIUS + COMBAT.BOUNDS_MARGIN + 0.1) } }), true).fault).toBe('bounds');
     expect(new CarWatch().update(rolling({ pos: { x: 0, y: COMBAT.BOUNDS_MIN_Y - 0.1, z: 0 } }), true).fault).toBe('bounds');
+  });
+
+  it('judges a car against the walls of its own arena: a rectangle is not a circle', () => {
+    // the Container Port is a rectangle (+-45 by +-33): a corner is further from the middle than the Stadium's whole radius
+    const w = new CarWatch(ARENAS.port);
+    expect(w.update(rolling({ pos: { x: 40, y: 1, z: 30 } }), true).fault).toBeNull();
+    expect(w.update(rolling({ pos: { x: 0, y: 1, z: 33 + COMBAT.BOUNDS_MARGIN + 0.1 } }), true).fault).toBe('bounds');
+    expect(new CarWatch(ARENAS.port).update(rolling({ pos: { x: 45 + COMBAT.BOUNDS_MARGIN + 0.1, y: 1, z: 0 } }), true).fault).toBe('bounds');
+    expect(new CarWatch(ARENAS.ice).update(rolling({ pos: { x: 50, y: 1, z: 0 } }), true).fault).toBeNull(); // the lake is wider than the Stadium
+    expect(new CarWatch(ARENAS.ice).update(rolling({ pos: { x: 52 + COMBAT.BOUNDS_MARGIN + 0.1, y: 1, z: 0 } }), true).fault).toBe('bounds');
   });
 
   it('eliminates a car whose state is not a number, so a broken body cannot linger in the round', () => {
