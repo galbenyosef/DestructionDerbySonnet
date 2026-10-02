@@ -76,6 +76,8 @@ export class GameClient {
   /** The car the camera follows (yours, or the one being watched): the point sound is heard from. */
   private focus: DrawPose | null = null;
   private statsVisible = false;
+  /** The arena the scene is built for (the Stadium until a welcome or roster says otherwise). */
+  private arenaId: ArenaId = 'stadium';
   private raf = 0;
   private stopped = false;
   private frames = 0;
@@ -174,6 +176,7 @@ export class GameClient {
         this.joined = true;
         this.epoch = m.epoch;
         this.roster = m.players;
+        this.enterArena(m.arena);
         this.session.onWelcome(m.you, m.epoch, m.phase?.phase ?? null, getArena(m.arena));
         this.match.onWelcome(m);
         this.applyRoster();
@@ -184,6 +187,7 @@ export class GameClient {
         this.epoch = m.epoch;
         this.roster = m.players;
         this.mySlot = m.you; // slots are per round
+        this.enterArena(m.arena);
         this.session.onRoster(m.epoch, m.you, getArena(m.arena)); // a new world: drop everything buffered or predicted
         this.chase.reset(); // and start the camera at the new spawn
         this.spectator.reset();
@@ -229,6 +233,16 @@ export class GameClient {
     else if (info.code === 1002) message = 'The game was updated — reload the page and try again.';
     else message = `Disconnected from the server${info.reason ? `: ${info.reason}` : ''}.`;
     this.finish(message);
+  }
+
+  /** Builds the scene (and the marks, and the spectator's limits) for the arena of the round, when it is not the one already standing. */
+  private enterArena(id: ArenaId): void {
+    if (id === this.arenaId) return;
+    this.arenaId = id;
+    const arena = getArena(id);
+    this.opts.gs.setArena(arena);
+    this.fx.setArena(arena);
+    this.spectator.setBounds(arena.bounds);
   }
 
   /** A click on an arena card, or a key from 1 to 4: asks the server for it when a vote is open. */
@@ -432,6 +446,7 @@ export class GameClient {
       mySlot: this.mySlot,
       roomCode: this.roomCode,
       epoch: this.epoch,
+      arena: this.arenaId,
       joined: this.joined,
       roster: this.roster,
       rttMs: Math.round(this.conn.rttMs),

@@ -55,6 +55,36 @@ describe('skidStrength', () => {
   });
 });
 
+describe('marks on an arena of another size', () => {
+  it('maps the world onto the texture by the extent it is given', () => {
+    expect(worldToTexture(0, 0, 70)).toEqual({ u: SKID.SIZE / 2, v: SKID.SIZE / 2 });
+    expect(worldToTexture(-70, -70, 70)).toEqual({ u: 0, v: 0 });
+    expect(worldToTexture(70, 0, 70).u).toBe(SKID.SIZE);
+  });
+
+  it('draws with the new scale after the arena changes', () => {
+    const surface = new Recorder();
+    const marks = new SkidMarks(surface);
+    marks.setExtent(70);
+    marks.wheel(0, 0, 0, 1);
+    marks.wheel(0, 1, 0, 1);
+    const [x0, , x1, , width] = surface.lines[0]!;
+    expect(x0).toBe(SKID.SIZE / 2);
+    expect(x1).toBeCloseTo(SKID.SIZE / 2 + SKID.SIZE / 140, 9);
+    expect(width).toBeCloseTo(SKID.WIDTH * (SKID.SIZE / 140), 9);
+  });
+
+  it('tells the surface about the new extent and wipes it', () => {
+    const surface = new Recorder();
+    const seen: number[] = [];
+    (surface as MarkSurface).setExtent = (e) => seen.push(e);
+    const marks = new SkidMarks(surface);
+    marks.setExtent(64);
+    expect(seen).toEqual([64]);
+    expect(surface.cleared).toBeGreaterThan(0);
+  });
+});
+
 describe('SkidMarks', () => {
   it('draws a line from where a skidding wheel was to where it is, and only from the second frame on', () => {
     const surface = new Recorder();

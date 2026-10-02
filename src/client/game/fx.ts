@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { boundsHalfSize, type ArenaDef } from '../../shared/arenas';
 import { ARENA, COMBAT } from '../../shared/constants';
 import { clamp, quatRotate, vadd, vdot, vlen } from '../../shared/math';
 import type { HitMessage, KoMessage } from '../../shared/protocol';
@@ -113,6 +114,12 @@ export class FxDirector {
    */
   onWelcome(log: readonly HitMessage[]): void {
     for (const h of log) this.wear(h, false);
+  }
+
+  /** The arena of the coming round: the tyre marks cover all of it (a little beyond its walls) and start blank. */
+  setArena(arena: ArenaDef): void {
+    this.marks.setExtent(boundsHalfSize(arena.bounds) + 2);
+    this.options.marks.upload();
   }
 
   /** A new round: every car is whole again and the ground is clean. */

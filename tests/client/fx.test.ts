@@ -4,6 +4,7 @@ import { AudioEngine } from '../../src/client/game/audio';
 import { CarView } from '../../src/client/game/carView';
 import { FX, FxDirector } from '../../src/client/game/fx';
 import { SKID, type MarkSurface } from '../../src/client/game/skidMarks';
+import { ARENAS } from '../../src/shared/arenas';
 import type { LocalImpact } from '../../src/client/net/prediction';
 import type { DrawPose } from '../../src/client/net/session';
 import { COMBAT } from '../../src/shared/constants';
@@ -14,6 +15,10 @@ import { FakeContext } from '../helpers/fakeAudio';
 class Recorder implements MarkSurface {
   lines = 0;
   cleared = 0;
+  extents: number[] = [];
+  setExtent(extent: number): void {
+    this.extents.push(extent);
+  }
   line(): void {
     this.lines++;
   }
@@ -415,5 +420,17 @@ describe('FxDirector rounds and newcomers', () => {
     t.setPoses([pose(0), pose(1, { linvel: { x: 10, y: 0, z: 0 }, throttle: 1 }), pose(2, { alive: false })]);
     t.frame();
     expect(t.ctx.nodes.filter((n) => n.started > 0 && n.stopped > 0)).toHaveLength(2); // the two oscillators of the wreck's engine
+  });
+});
+
+describe('FxDirector in another arena', () => {
+  it('lays the tyre marks over the whole arena it is told about, and starts them blank', () => {
+    const t = setup();
+    const cleared = t.surface.cleared;
+    t.fx.setArena(ARENAS.quarry);
+    expect(t.surface.extents).toEqual([64]); // the quarry reaches 62 m along its long axis, and the marks have 2 m to spare
+    expect(t.surface.cleared).toBeGreaterThan(cleared);
+    t.fx.setArena(ARENAS.stadium);
+    expect(t.surface.extents).toEqual([64, SKID.EXTENT]);
   });
 });

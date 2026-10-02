@@ -3,12 +3,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import type { BoxSpec } from '../../shared/arena';
-import { DEFAULT_ARENA } from '../../shared/arenas';
-import { ARENA } from '../../shared/constants';
+import { boundsRadius, DEFAULT_ARENA, type ArenaDef } from '../../shared/arenas';
 import type { QualityProfile } from '../settings';
 import { COMPOSER_SAMPLES, createComposerTarget, needsComposer } from './composer';
-import { createDressing } from './dressing';
+import { createArenaView, type ArenaView } from './arenaView';
 import { needsResize } from './viewport';
 
 export interface GameScene {
@@ -28,6 +26,8 @@ export interface GameScene {
   antialiasSamples(): number;
   /** Applies a graphics preset: pixel ratio, shadows, glow and crowd. */
   applyQuality(profile: QualityProfile): void;
+  /** Builds the arena of the coming round (ground, walls, obstacles, scenery) and sets the sky, fog and light to its look. */
+  setArena(arena: ArenaDef): void;
   dispose(): void;
 }
 
@@ -56,17 +56,6 @@ function dirtTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function boxMesh(b: BoxSpec, material: THREE.Material, geometries: THREE.BufferGeometry[]): THREE.Mesh {
-  const geometry = new THREE.BoxGeometry(b.hx * 2, b.hy * 2, b.hz * 2);
-  geometries.push(geometry);
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.position.set(b.x, b.y, b.z);
-  mesh.rotation.y = b.yaw; // same yaw convention as the physics colliders (rotation about +Y)
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  return mesh;
-}
-
 export function createGameScene(canvas: HTMLCanvasElement): GameScene {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   let pixelCap = 2; // the highest device pixel ratio the game draws at (a graphics preset lowers it)
@@ -78,68 +67,45 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
   renderer.info.autoReset = false; // the bloom passes render several times a frame: count them all, reset once per frame
 
   const scene = new THREE.Scene();
-  const night = new THREE.Color(0x0b1226);
-  scene.background = night;
-  scene.fog = new THREE.Fog(night, 70, 240);
+  const sky = new THREE.Color();
+  scene.background = sky;
+  const fog = new THREE.Fog(sky, 70, 240);
+  scene.fog = fog;
 
-  scene.add(new THREE.HemisphereLight(0x9db4ff, 0x3b2c1c, 0.75));
-  const sun = new THREE.DirectionalLight(0xfff0d8, 2.4);
+  const hemisphere = new THREE.HemisphereLight(0xffffff, 0x444444, 0.75);
+  scene.add(hemisphere);
+  const sun = new THREE.DirectionalLight(0xffffff, 2.4);
   sun.position.set(35, 70, 25);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  const extent = ARENA.RADIUS + 8;
-  sun.shadow.camera.left = -extent;
-  sun.shadow.camera.right = extent;
-  sun.shadow.camera.top = extent;
-  sun.shadow.camera.bottom = -extent;
   sun.shadow.camera.near = 10;
   sun.shadow.camera.far = 180;
-  sun.shadow.camera.updateProjectionMatrix();
   sun.shadow.bias = -0.0004;
   scene.add(sun);
 
-  const geometries: THREE.BufferGeometry[] = [];
-  const materials: THREE.Material[] = [];
-  const textures: THREE.Texture[] = [];
-
-  const dirt = dirtTexture();
-  textures.push(dirt);
-  const groundMaterial = new THREE.MeshStandardMaterial({ map: dirt, roughness: 1, metalness: 0 });
-  materials.push(groundMaterial);
-  const groundGeometry = new THREE.CircleGeometry(ARENA.RADIUS + 30, 96);
-  geometries.push(groundGeometry);
-  const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  scene.add(ground);
-
-  const concrete = new THREE.MeshStandardMaterial({ color: 0x8a8d91, roughness: 0.9, metalness: 0.05 });
-  materials.push(concrete);
-  for (const seg of DEFAULT_ARENA.boxes) if (seg.kind === 'wall') scene.add(boxMesh(seg, concrete, geometries));
-  const blocks = new THREE.MeshStandardMaterial({ color: 0x9a9da1, roughness: 0.85, metalness: 0.05 });
-  materials.push(blocks);
-  for (const o of DEFAULT_ARENA.boxes) if (o.kind !== 'wall') scene.add(boxMesh(o, blocks, geometries));
-
-  // The stands with their crowd, the tyre stacks outside the barrier, and a few floodlight masts.
-  const dressing = createDressing();
-  scene.add(dressing.group);
-
-  const poleGeometry = new THREE.CylinderGeometry(0.3, 0.4, 16, 8);
-  const lampGeometry = new THREE.BoxGeometry(3, 0.6, 1.2);
-  geometries.push(poleGeometry, lampGeometry);
-  const poleMaterial = new THREE.MeshStandardMaterial({ color: 0x2b2f38, roughness: 0.8 });
-  const lampMaterial = new THREE.MeshStandardMaterial({ color: 0xfff3d0, emissive: 0xfff3d0, emissiveIntensity: 3 });
-  materials.push(poleMaterial, lampMaterial);
-  for (let i = 0; i < 6; i++) {
-    const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
-    const r = ARENA.RADIUS + 12;
-    const pole = new THREE.Mesh(poleGeometry, poleMaterial);
-    pole.position.set(Math.cos(a) * r, 8, Math.sin(a) * r);
-    const lamp = new THREE.Mesh(lampGeometry, lampMaterial);
-    lamp.position.set(Math.cos(a) * r, 16.3, Math.sin(a) * r);
-    lamp.lookAt(0, 0, 0);
-    scene.add(pole, lamp);
-  }
+  let crowdVisible = true; // the graphics preset's choice, kept for the next arena
+  let view: ArenaView | null = null;
+  const setArena = (def: ArenaDef): void => {
+    view?.dispose();
+    view = createArenaView(def, { crowd: crowdVisible, groundTexture: def.id === 'stadium' ? dirtTexture : undefined });
+    scene.add(view.group);
+    const look = def.look;
+    sky.set(look.sky);
+    fog.color.set(look.fog);
+    fog.near = look.fogNear;
+    fog.far = look.fogFar;
+    hemisphere.color.set(look.hemiSky);
+    hemisphere.groundColor.set(look.hemiGround);
+    sun.color.set(look.sun);
+    sun.intensity = look.sunIntensity;
+    const extent = boundsRadius(def.bounds) + 8; // the floodlight's shadow covers the whole playable area
+    sun.shadow.camera.left = -extent;
+    sun.shadow.camera.right = extent;
+    sun.shadow.camera.top = extent;
+    sun.shadow.camera.bottom = -extent;
+    sun.shadow.camera.updateProjectionMatrix();
+  };
+  setArena(DEFAULT_ARENA);
 
   const camera = new THREE.PerspectiveCamera(65, 1, 0.1, 600);
 
@@ -204,19 +170,18 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
       setSamples(profile.msaa);
       bloomWanted = profile.bloom;
       bloom.enabled = bloomWanted && !bloomForcedOff;
-      dressing.setCrowd(profile.crowd);
+      crowdVisible = profile.crowd;
+      view?.setCrowd(profile.crowd);
     },
     antialiasSamples: () => {
       if (needsComposer(bloom.enabled, msaa)) return composer.renderTarget1.samples;
       const gl = renderer.getContext();
       return gl.getParameter(gl.SAMPLES) as number;
     },
+    setArena,
     dispose: () => {
-      dressing.dispose();
+      view?.dispose();
       composer.dispose();
-      for (const g of geometries) g.dispose();
-      for (const m of materials) m.dispose();
-      for (const t of textures) t.dispose();
       renderer.dispose();
     },
   };
