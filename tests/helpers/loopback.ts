@@ -1,6 +1,7 @@
 import { DelayLine, mulberry32 } from '../../src/client/net/latency';
 import type { Predictor, PredictorOptions, ReconcileResult } from '../../src/client/net/prediction';
 import { PredictedWorld, type RenderPose } from '../../src/client/net/predictedWorld';
+import { getArena, type ArenaId } from '../../src/shared/arenas';
 import { quantizeInput, type CarInput } from '../../src/shared/input';
 import { decodeSnapshot, type Snapshot } from '../../src/shared/protocol';
 import type { Simulation } from '../../src/shared/sim';
@@ -13,7 +14,7 @@ import { FakeSocket } from './fakeSocket';
 
 export const TICK_MS = 1000 / 60;
 
-type Down = { kind: 'snapshot'; snapshot: Snapshot } | { kind: 'roster'; epoch: number; you: number } | { kind: 'phase'; live: boolean };
+type Down = { kind: 'snapshot'; snapshot: Snapshot } | { kind: 'roster'; epoch: number; you: number; arena: ArenaId } | { kind: 'phase'; live: boolean };
 type Up = { seq: number; input: CarInput };
 
 export interface LoopbackOptions {
@@ -119,8 +120,8 @@ export class Loopback {
     while (this.sentIndex < frames.length) {
       const frame = frames[this.sentIndex++]!;
       if (typeof frame === 'string') {
-        const msg = JSON.parse(frame) as { t: string; epoch?: number; you?: number; phase?: string };
-        if (msg.t === 'roster') this.down.push(now, { kind: 'roster', epoch: msg.epoch!, you: msg.you! });
+        const msg = JSON.parse(frame) as { t: string; epoch?: number; you?: number; phase?: string; arena?: ArenaId };
+        if (msg.t === 'roster') this.down.push(now, { kind: 'roster', epoch: msg.epoch!, you: msg.you!, arena: msg.arena! });
         else if (msg.t === 'phase') this.down.push(now, { kind: 'phase', live: msg.phase === 'live' });
       } else {
         const snapshot = decodeSnapshot(frame);
@@ -129,7 +130,7 @@ export class Loopback {
     }
     for (const d of this.down.due(now)) {
       if (d.kind === 'roster') {
-        this.world.beginWorld(d.epoch, d.you);
+        this.world.beginWorld(d.epoch, d.you, getArena(d.arena));
         this.world.setLive(false);
       } else if (d.kind === 'phase') this.world.setLive(d.live);
       else this.results.push(this.world.onSnapshot(d.snapshot, now));

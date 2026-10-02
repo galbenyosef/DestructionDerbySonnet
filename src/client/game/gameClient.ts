@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getArena } from '../../shared/arenas';
 import { CAR_FORWARD, NET, PHYSICS } from '../../shared/constants';
 import { quantizeInput } from '../../shared/input';
 import { quatRotate, vdot, vlen } from '../../shared/math';
@@ -172,7 +173,7 @@ export class GameClient {
         this.joined = true;
         this.epoch = m.epoch;
         this.roster = m.players;
-        this.session.onWelcome(m.you, m.epoch, m.phase?.phase ?? null);
+        this.session.onWelcome(m.you, m.epoch, m.phase?.phase ?? null, getArena(m.arena));
         this.match.onWelcome(m);
         this.applyRoster();
         this.fx.onWelcome(m.dents); // the cars of a round in progress are dented and stripped as the players saw them
@@ -182,7 +183,7 @@ export class GameClient {
         this.epoch = m.epoch;
         this.roster = m.players;
         this.mySlot = m.you; // slots are per round
-        this.session.onRoster(m.epoch, m.you); // a new world: drop everything buffered or predicted
+        this.session.onRoster(m.epoch, m.you, getArena(m.arena)); // a new world: drop everything buffered or predicted
         this.chase.reset(); // and start the camera at the new spawn
         this.spectator.reset();
         this.match.onRoster(m);
