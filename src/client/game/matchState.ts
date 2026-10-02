@@ -7,8 +7,11 @@ import type {
   ResultsMessage,
   RosterMessage,
   ScoresMessage,
+  VoteCounts,
+  VotesMessage,
   WelcomeMessage,
 } from '../../shared/protocol';
+import { ARENA_IDS, getArena, type ArenaId } from '../../shared/arenas';
 import { COMBAT } from '../../shared/constants';
 import type { Zone } from '../../shared/types';
 
@@ -51,7 +54,21 @@ export interface BoardRow {
   you: boolean;
 }
 
+/** One arena on the vote panel. */
+export interface VoteOption {
+  id: ArenaId;
+  name: string;
+  /** Votes for it so far, as the server last counted them. */
+  count: number;
+  /** True for the one you voted for. */
+  mine: boolean;
+}
+
 export interface MatchView {
+  /** The arena of the running (or coming) round. */
+  arena: { id: ArenaId; name: string };
+  /** The arenas to vote on (only while the results show; null otherwise). */
+  vote: { options: VoteOption[] } | null;
   phase: Phase | null;
   round: number;
   /** Label and value of the round clock: "Starts in 5", "Time left 3:42", "Next round in 6". */
@@ -68,6 +85,8 @@ export interface MatchView {
   /** 0..1: a red flash that fades after you are hit. */
   flash: number;
 }
+
+const NO_VOTES: Readonly<VoteCounts> = { stadium: 0, ice: 0, quarry: 0, port: 0 };
 
 const FEED_MS = 7000;
 const FEED_MAX = 5;
@@ -99,6 +118,9 @@ export class MatchState {
   private flashAt = Number.NEGATIVE_INFINITY;
   private flashPower = 0;
   private watching = -1;
+  private arena: ArenaId = 'stadium';
+  private votes: VoteCounts = { ...NO_VOTES };
+  private myVote: ArenaId | null = null;
 
   constructor(private readonly now: () => number = () => performance.now()) {}
 
@@ -108,6 +130,9 @@ export class MatchState {
     this.scores = new Map(w.scores.map((r) => [r.slot, { score: r.score, kills: r.kills }]));
     this.results = null;
     this.feed = [];
+    this.arena = w.arena;
+    this.votes = { ...w.votes };
+    this.myVote = null;
     this.resetRoundDamage();
     if (w.phase) this.enter(w.phase); // already under way when you arrive: no GO! for a round that started minutes ago
   }
@@ -117,6 +142,9 @@ export class MatchState {
     this.mySlot = r.you;
     this.players = new Map(r.players.map((p) => [p.slot, p]));
     this.round = r.round;
+    this.arena = r.arena;
+    this.votes = { ...NO_VOTES };
+    this.myVote = null;
     this.scores.clear();
     this.facts.clear();
     this.results = null;
@@ -169,6 +197,18 @@ export class MatchState {
     this.results = r;
   }
 
+  /** The running tally of the vote. */
+  onVotes(v: VotesMessage): void {
+    this.votes = { ...v.counts };
+  }
+
+  /** Casts (or changes) your vote. Returns false, and remembers nothing, when no vote is open: only the results phase has one. */
+  vote(arena: ArenaId): boolean {
+    if (this.phase !== 'results') return false;
+    this.myVote = arena;
+    return true;
+  }
+
   /** The latest snapshot's cars, every frame. */
   onCars(cars: readonly CarFact[]): void {
     this.facts.clear();
@@ -216,6 +256,11 @@ export class MatchState {
       clock = String(seconds);
     }
     return {
+      arena: { id: this.arena, name: getArena(this.arena).name },
+      vote:
+        this.phase === 'results'
+          ? { options: ARENA_IDS.map((id) => ({ id, name: getArena(id).name, count: this.votes[id], mine: this.myVote === id })) }
+          : null,
       phase: this.phase,
       round: this.round,
       clockLabel,
@@ -240,7 +285,7 @@ export class MatchState {
       return {
         kind: 'countdown',
         title: String(seconds),
-        subtitle: this.mySlot >= 0 ? `Round ${this.round} — get ready` : 'You join the next round',
+        subtitle: this.mySlot >= 0 ? `Round ${this.round} · ${getArena(this.arena).name} — get ready` : 'You join the next round',
         hint: '',
       };
     }
@@ -257,7 +302,7 @@ export class MatchState {
       const title = !r ? 'Round over' : r.winner < 0 ? 'Draw' : `${r.rows.find((row) => row.slot === r.winner)?.name ?? name(r.winner)} wins`;
       const mine = r && this.mySlot >= 0 ? r.rows.find((row) => row.slot === this.mySlot) : undefined;
       const gained = mine ? ` · you scored ${mine.gained}` : '';
-      return { kind: 'results', title, subtitle: `Next round in ${seconds}${gained}`, hint: '' };
+      return { kind: 'results', title, subtitle: `Next round in ${seconds}${gained}`, hint: 'Vote for the next arena · keys 1 to 4' };
     }
     return null;
   }

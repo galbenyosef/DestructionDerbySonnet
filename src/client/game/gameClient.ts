@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { getArena } from '../../shared/arenas';
+import { ARENA_IDS, getArena, type ArenaId } from '../../shared/arenas';
 import { CAR_FORWARD, NET, PHYSICS } from '../../shared/constants';
 import { quantizeInput } from '../../shared/input';
 import { quatRotate, vdot, vlen } from '../../shared/math';
@@ -101,6 +101,7 @@ export class GameClient {
       marks: { surface: this.marks, object: this.marks.mesh, upload: () => this.marks.upload() },
       view: (slot) => this.views.get(slot),
     });
+    opts.hud.setVoteHandler((arena) => this.castVote(arena));
     this.audio.setVolume(this.settings.volume);
     this.audio.setMuted(this.settings.muted);
     this.applyQuality(this.settings.quality);
@@ -190,6 +191,9 @@ export class GameClient {
         this.applyRoster();
         this.fx.onRoster();
         break;
+      case 'votes':
+        this.match.onVotes(m);
+        break;
       case 'phase':
         this.session.onPhase(m.phase);
         this.match.onPhase(m);
@@ -225,6 +229,11 @@ export class GameClient {
     else if (info.code === 1002) message = 'The game was updated — reload the page and try again.';
     else message = `Disconnected from the server${info.reason ? `: ${info.reason}` : ''}.`;
     this.finish(message);
+  }
+
+  /** A click on an arena card, or a key from 1 to 4: asks the server for it when a vote is open. */
+  private castVote(arena: ArenaId): void {
+    if (this.match.vote(arena)) this.conn.send({ t: 'vote', arena });
   }
 
   private applyRoster(): void {
@@ -310,6 +319,11 @@ export class GameClient {
     if (code === 'F3') {
       this.statsVisible = !this.statsVisible;
       this.opts.hud.setStatsVisible(this.statsVisible);
+      return;
+    }
+    const digit = /^(?:Digit|Numpad)([1-4])$/.exec(code);
+    if (digit) {
+      this.castVote(ARENA_IDS[Number(digit[1]) - 1]!);
       return;
     }
     const direction = cycleDirection(code);
