@@ -115,6 +115,8 @@ describe('parseArena', () => {
     ['a polygon with two points', (a: any) => { a.bounds = { kind: 'polygon', points: [[0, 0], [1, 1]] }; }],
     ['seven spawn points', (a: any) => { a.spawn = { kind: 'points', points: Array.from({ length: 7 }, (_, i) => [i, 0]) }; }],
     ['a missing look', (a: any) => { delete a.look; }],
+    ['a tyre-mark colour that is not #rrggbb', (a: any) => { a.look.marks = 'red'; }],
+    ['no tyre-mark colour', (a: any) => { delete a.look.marks; }],
   ])('rejects %s', (_name, damage) => {
     const a = raw('stadium');
     damage(a);
@@ -123,6 +125,14 @@ describe('parseArena', () => {
 
   it('rejects things that are not objects', () => {
     for (const bad of [null, 3, 'x', [], undefined]) expect(() => parseArena(bad)).toThrow(/arena layout/);
+  });
+});
+
+describe('the look of each arena', () => {
+  it('has a tyre-mark colour of its own, written #rrggbb', () => {
+    const colours = ARENA_IDS.map((id) => ARENAS[id].look.marks);
+    for (const c of colours) expect(c).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(new Set(colours).size).toBe(ARENA_IDS.length);
   });
 });
 

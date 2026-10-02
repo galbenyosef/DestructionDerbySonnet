@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SKID, SkidMarks, skidStrength, worldToTexture, type MarkSurface } from '../../src/client/game/skidMarks';
+import { SKID, SkidMarks, hexToRgb, skidStrength, worldToTexture, type MarkSurface } from '../../src/client/game/skidMarks';
 
 class Recorder implements MarkSurface {
   lines: Array<[number, number, number, number, number, number]> = [];
@@ -52,6 +52,22 @@ describe('skidStrength', () => {
 
   it('copes with broken numbers', () => {
     expect(skidStrength({ ...rolling, lateral: Number.NaN, handbrake: false })).toBe(0);
+  });
+});
+
+describe('the colour of the marks', () => {
+  it('reads #rrggbb into three numbers, and falls back to the dark default for anything else', () => {
+    expect(hexToRgb('#2a4a6a')).toEqual([42, 74, 106]);
+    expect(hexToRgb('#FFFFFF')).toEqual([255, 255, 255]);
+    for (const bad of ['', 'red', '#12345', '#gggggg', '2a4a6a']) expect(hexToRgb(bad)).toEqual([8, 6, 4]);
+  });
+
+  it('tells the surface the colour of the ground it is drawn on', () => {
+    const seen: string[] = [];
+    const surface = new Recorder();
+    (surface as MarkSurface).setColor = (c) => seen.push(c);
+    new SkidMarks(surface).setColor('#2a4a6a');
+    expect(seen).toEqual(['#2a4a6a']);
   });
 });
 

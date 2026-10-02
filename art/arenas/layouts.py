@@ -102,7 +102,7 @@ def stadium():
         'bounds': {'kind': 'circle', 'radius': 45},
         'spawn': {'kind': 'ring', 'radius': 32},
         'look': {'sky': '#0b1226', 'fog': '#0b1226', 'fogNear': 70, 'fogFar': 240, 'ground': '#6b4a2f', 'wall': '#8a8d91',
-                 'block': '#9a9da1', 'sun': '#fff0d8', 'sunIntensity': 2.4, 'hemiSky': '#9db4ff', 'hemiGround': '#3b2c1c'},
+                 'block': '#9a9da1', 'sun': '#fff0d8', 'sunIntensity': 2.4, 'hemiSky': '#9db4ff', 'hemiGround': '#3b2c1c', 'marks': '#080604'},
     }
 
 
@@ -120,7 +120,7 @@ def ice():
         'bounds': {'kind': 'circle', 'radius': radius},
         'spawn': {'kind': 'ring', 'radius': 38},
         'look': {'sky': '#a9c7e8', 'fog': '#c9dcef', 'fogNear': 60, 'fogFar': 260, 'ground': '#dff0fb', 'wall': '#f4f9ff',
-                 'block': '#9fd0f0', 'sun': '#fff2e0', 'sunIntensity': 2.2, 'hemiSky': '#cfe3ff', 'hemiGround': '#9fb8d0'},
+                 'block': '#9fd0f0', 'sun': '#fff2e0', 'sunIntensity': 2.2, 'hemiSky': '#cfe3ff', 'hemiGround': '#9fb8d0', 'marks': '#2a4a6a'},
     }
 
 
@@ -142,7 +142,7 @@ def quarry():
         'bounds': {'kind': 'polygon', 'points': pts(outline)},
         'spawn': {'kind': 'points', 'points': pts(spawns)},
         'look': {'sky': '#d8a066', 'fog': '#c98f58', 'fogNear': 50, 'fogFar': 200, 'ground': '#8a5a32', 'wall': '#6e4a2c',
-                 'block': '#7a5b3b', 'sun': '#ffcf99', 'sunIntensity': 2.6, 'hemiSky': '#ffd9a8', 'hemiGround': '#5a3a20'},
+                 'block': '#7a5b3b', 'sun': '#ffcf99', 'sunIntensity': 2.6, 'hemiSky': '#ffd9a8', 'hemiGround': '#5a3a20', 'marks': '#2a1a0e'},
     }
 
 
@@ -166,7 +166,7 @@ def port():
         'bounds': {'kind': 'polygon', 'points': pts(outline)},
         'spawn': {'kind': 'points', 'points': pts(spawns)},
         'look': {'sky': '#1a1f2e', 'fog': '#252a3a', 'fogNear': 60, 'fogFar': 220, 'ground': '#4a4d52', 'wall': '#6b6e73',
-                 'block': '#7d8086', 'sun': '#ffb066', 'sunIntensity': 1.9, 'hemiSky': '#8d9ccf', 'hemiGround': '#33281f'},
+                 'block': '#7d8086', 'sun': '#ffb066', 'sunIntensity': 2.6, 'hemiSky': '#a3b2e0', 'hemiGround': '#33281f', 'marks': '#0a0a0a'},
     }
 
 

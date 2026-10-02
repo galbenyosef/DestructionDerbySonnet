@@ -489,6 +489,7 @@
   "sun": "#fff2e0",
   "sunIntensity": 2.2,
   "hemiSky": "#cfe3ff",
-  "hemiGround": "#9fb8d0"
+  "hemiGround": "#9fb8d0",
+  "marks": "#2a4a6a"
  }
 }

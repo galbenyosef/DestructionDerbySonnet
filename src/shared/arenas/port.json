@@ -359,8 +359,9 @@
   "wall": "#6b6e73",
   "block": "#7d8086",
   "sun": "#ffb066",
-  "sunIntensity": 1.9,
-  "hemiSky": "#8d9ccf",
-  "hemiGround": "#33281f"
+  "sunIntensity": 2.6,
+  "hemiSky": "#a3b2e0",
+  "hemiGround": "#33281f",
+  "marks": "#0a0a0a"
  }
 }

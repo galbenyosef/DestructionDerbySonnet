@@ -16,6 +16,12 @@ export const SKID = {
   ALPHA: 0.5,
 } as const;
 
+/** [r, g, b] of a `#rrggbb` colour; the default dark rubber when it is anything else. */
+export function hexToRgb(hex: string): [number, number, number] {
+  const m = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(hex);
+  return m ? [parseInt(m[1]!, 16), parseInt(m[2]!, 16), parseInt(m[3]!, 16)] : [8, 6, 4];
+}
+
 /** Where a world point lands on the marks texture (pixels; x to the right, y down as canvases do), for the plane the marks are drawn on. */
 export function worldToTexture(x: number, z: number, extent: number = SKID.EXTENT): { u: number; v: number } {
   const scale = SKID.SIZE / (2 * extent);
@@ -41,6 +47,8 @@ export interface MarkSurface {
   clear(): void;
   /** The marks now cover a square of half-width `extent` metres (another arena); the picture on it is wiped. */
   setExtent?(extent: number): void;
+  /** The marks are drawn in this `#rrggbb` colour from now on (the ground of another arena). */
+  setColor?(colour: string): void;
 }
 
 /**
@@ -53,6 +61,11 @@ export class SkidMarks {
   private extent: number = SKID.EXTENT;
 
   constructor(private readonly surface: MarkSurface) {}
+
+  /** The colour the marks are drawn in (it follows the ground). */
+  setColor(colour: string): void {
+    this.surface.setColor?.(colour);
+  }
 
   /** Another arena: the texture covers a square of half-width `extent` metres from now on, and starts blank. */
   setExtent(extent: number): void {
@@ -96,6 +109,7 @@ export class CanvasMarks implements MarkSurface {
   readonly texture: THREE.CanvasTexture;
   readonly mesh: THREE.Mesh;
   private readonly context: CanvasRenderingContext2D;
+  private rgb = '8, 6, 4';
 
   constructor() {
     const canvas = document.createElement('canvas');
@@ -114,7 +128,7 @@ export class CanvasMarks implements MarkSurface {
 
   line(x0: number, y0: number, x1: number, y1: number, width: number, alpha: number): void {
     const g = this.context;
-    g.strokeStyle = `rgba(8, 6, 4, ${alpha.toFixed(3)})`;
+    g.strokeStyle = `rgba(${this.rgb}, ${alpha.toFixed(3)})`;
     g.lineWidth = width;
     g.beginPath();
     g.moveTo(x0, y0);
@@ -124,6 +138,10 @@ export class CanvasMarks implements MarkSurface {
 
   clear(): void {
     this.context.clearRect(0, 0, SKID.SIZE, SKID.SIZE);
+  }
+
+  setColor(colour: string): void {
+    this.rgb = hexToRgb(colour).join(', ');
   }
 
   setExtent(extent: number): void {

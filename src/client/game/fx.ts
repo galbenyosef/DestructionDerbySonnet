@@ -118,6 +118,7 @@ export class FxDirector {
 
   /** The arena of the coming round: the tyre marks cover all of it (a little beyond its walls) and start blank. */
   setArena(arena: ArenaDef): void {
+    this.marks.setColor(arena.look.marks);
     this.marks.setExtent(boundsHalfSize(arena.bounds) + 2);
     this.options.marks.upload();
   }
