@@ -12,18 +12,24 @@ describe('automaticChoice (?auto= routing that skips the menu)', () => {
   });
 
   it('maps quick and create with the default name and colour', () => {
-    expect(choice('auto=quick')).toEqual({ name: 'Guest', color: PALETTE[0], mode: 'quick' });
-    expect(choice('auto=create&name=Max')).toEqual({ name: 'Max', color: PALETTE[0], mode: 'create' });
+    expect(choice('auto=quick')).toEqual({ name: 'Guest', color: PALETTE[0], car: 'sedan', mode: 'quick' });
+    expect(choice('auto=create&name=Max')).toEqual({ name: 'Max', color: PALETTE[0], car: 'sedan', mode: 'create' });
   });
 
   it('normalises the room code for join', () => {
-    expect(choice('auto=join:abcd&name=Ann')).toEqual({ name: 'Ann', color: PALETTE[0], mode: 'join', code: 'ABCD' });
+    expect(choice('auto=join:abcd&name=Ann')).toEqual({ name: 'Ann', color: PALETTE[0], car: 'sedan', mode: 'join', code: 'ABCD' });
   });
 
   it('refuses codes that can never exist and unknown modes', () => {
     for (const q of ['auto=join:', 'auto=join:ABC', 'auto=join:ABCDE', 'auto=join:ROOM', 'auto=join:AB1D', 'auto=spectate', 'auto=JOIN:ABCD']) {
       expect(choice(q)).toBeNull();
     }
+  });
+
+  it('picks the car by name, and the sedan for a name that is not a car', () => {
+    expect(choice('auto=quick&car=pickup')!.car).toBe('pickup');
+    expect(choice('auto=quick&car=coupe&name=Max')).toMatchObject({ car: 'coupe', name: 'Max' });
+    for (const bad of ['tank', '', 'Pickup', '4', '__proto__']) expect(choice(`auto=quick&car=${bad}`)!.car).toBe('sedan');
   });
 
   it('picks the colour by palette index and copes with hostile values', () => {

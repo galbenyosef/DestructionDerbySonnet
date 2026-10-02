@@ -1,4 +1,5 @@
 import { getArena, DEFAULT_ARENA, type ArenaDef, type ArenaId } from '../shared/arenas';
+import { CAR_IDS, type CarId } from '../shared/cars';
 import { ARENA, NET, PHYSICS, ROUND } from '../shared/constants';
 import { PARKED_INPUT, type CarInput } from '../shared/input';
 import {
@@ -54,6 +55,7 @@ interface Participant {
   bot: boolean;
   name: string;
   color: number;
+  car: CarId;
   /** Slot of this participant's car in the running round, or -1 while it waits for the next one. */
   slot: number;
   score: number;
@@ -145,7 +147,7 @@ export class Room {
 
   /** The cars of the running round. */
   playerInfos(): PlayerInfo[] {
-    return this.roundCars.map((p, slot) => (p.bot ? { slot, name: p.name, color: p.color, bot: true } : { slot, name: p.name, color: p.color }));
+    return this.roundCars.map((p, slot) => (p.bot ? { slot, name: p.name, color: p.color, car: p.car, bot: true } : { slot, name: p.name, color: p.color, car: p.car }));
   }
 
   /** What a player who has just joined needs to know: their slot (-1 = watching), the cars, the phase and the scores. */
@@ -173,7 +175,7 @@ export class Room {
   /** Adds a human. Returns false when the room is full or closed. They get a car when the next round starts. */
   addPlayer(player: Player): boolean {
     if (this.disposed || this.isFull) return false;
-    this.participants.push({ player, bot: false, name: player.name, color: player.color, slot: -1, score: 0, kills: 0 });
+    this.participants.push({ player, bot: false, name: player.name, color: player.color, car: player.car, slot: -1, score: 0, kills: 0 });
     player.slot = -1;
     player.room = this;
     player.resetInputState();
@@ -323,6 +325,7 @@ export class Room {
       bot: true,
       name: BOT_NAMES[n % BOT_NAMES.length]!,
       color: BOT_COLORS[n % BOT_COLORS.length]!,
+      car: CAR_IDS[Math.floor(mulberry32((this.seed + n * 104_729) >>> 0)() * CAR_IDS.length)]!, // a model of its own, the same for the same room seed
       slot: -1,
       score: 0,
       kills: 0,

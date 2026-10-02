@@ -101,6 +101,26 @@
         outline: 2px solid var(--accent);
         outline-offset: 2px;
       }
+      .cars {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        margin: 10px 0 6px;
+      }
+      .car {
+        padding: 8px 4px;
+        font: inherit;
+        font-size: 13px;
+        color: var(--ink);
+        background: transparent;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .car[aria-checked='true'] {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent);
+      }
       .swatches {
         display: flex;
         gap: 8px;

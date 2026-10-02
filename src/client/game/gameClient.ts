@@ -168,6 +168,7 @@ export class GameClient {
       v: NET.PROTOCOL_VERSION,
       name: choice.name,
       color: choice.color,
+      car: choice.car,
       mode: choice.mode,
       code: choice.code,
     });

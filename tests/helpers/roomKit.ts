@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import type { CarId } from '../../src/shared/cars';
 import { decodeSnapshot, type Snapshot } from '../../src/shared/protocol';
 import type { Simulation } from '../../src/shared/sim';
 import { Player } from '../../src/server/player';
@@ -23,10 +24,11 @@ export function makeRoom(options: RoomOptions = {}): { room: Room; emptied: Room
 }
 
 let nextId = 1;
-export function join(room: Room, name = 'P'): { player: Player; socket: FakeSocket } {
+export function join(room: Room, name = 'P', car?: CarId): { player: Player; socket: FakeSocket } {
   const socket = new FakeSocket();
   const player = new Player(nextId++, socket);
   player.name = name;
+  if (car) player.car = car;
   expect(room.addPlayer(player)).toBe(true);
   return { player, socket };
 }

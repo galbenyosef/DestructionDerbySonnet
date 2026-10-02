@@ -3,9 +3,9 @@ import { MatchState } from '../../src/client/game/matchState';
 import type { KoMessage, PhaseMessage, PlayerInfo, ResultsMessage, RosterMessage, WelcomeMessage } from '../../src/shared/protocol';
 
 const players: PlayerInfo[] = [
-  { slot: 0, name: 'Ann', color: 0xd84a2b },
-  { slot: 1, name: 'Bob', color: 0x2b6fd8 },
-  { slot: 2, name: 'Rusty', color: 0x8a8f98, bot: true },
+  { slot: 0, name: 'Ann', color: 0xd84a2b, car: 'sedan' },
+  { slot: 1, name: 'Bob', color: 0x2b6fd8, car: 'coupe' },
+  { slot: 2, name: 'Rusty', color: 0x8a8f98, car: 'pickup', bot: true },
 ];
 const welcome = (over: Partial<WelcomeMessage> = {}): WelcomeMessage => ({
   t: 'welcome', v: 2, you: 0, room: { code: 'ABCD', public: true, capacity: 8 }, epoch: 1, players, tickRate: 60, snapshotEvery: 2, phase: null, scores: [], dents: [], arena: 'stadium', votes: { stadium: 0, ice: 0, quarry: 0, port: 0 }, ...over,
