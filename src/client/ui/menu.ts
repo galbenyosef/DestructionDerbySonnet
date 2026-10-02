@@ -1,5 +1,6 @@
 import { normalizeRoomCode, type JoinMode } from '../../shared/protocol';
 import { CAR_IDS, CAR_NAMES, type CarId } from '../../shared/cars';
+import { CAR_PICTURE_URLS } from '../game/carAssets';
 import { PALETTE, loadProfile, saveProfile } from '../profile';
 import { QUALITIES, type Quality, type Settings } from '../settings';
 
@@ -98,7 +99,14 @@ export function showMenu(root: HTMLElement, options: MenuOptions = {}): Promise<
     b.type = 'button';
     b.className = 'car';
     b.dataset.car = id;
-    b.textContent = CAR_NAMES[id];
+    const picture = document.createElement('img');
+    picture.src = CAR_PICTURE_URLS[id];
+    picture.alt = '';
+    picture.draggable = false;
+    const label = document.createElement('span');
+    label.textContent = CAR_NAMES[id];
+    b.append(picture, label);
+    b.title = CAR_NAMES[id];
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', String(id === car));
     b.addEventListener('click', () => {
