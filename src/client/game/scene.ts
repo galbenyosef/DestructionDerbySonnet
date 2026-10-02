@@ -3,7 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { boundsRadius, DEFAULT_ARENA, type ArenaDef } from '../../shared/arenas';
+import { boundsRadius, DEFAULT_ARENA, type ArenaDef, type ArenaId } from '../../shared/arenas';
 import type { QualityProfile } from '../settings';
 import { COMPOSER_SAMPLES, createComposerTarget, needsComposer } from './composer';
 import { createArenaView, type ArenaView } from './arenaView';
@@ -27,7 +27,9 @@ export interface GameScene {
   /** Applies a graphics preset: pixel ratio, shadows, glow and crowd. */
   applyQuality(profile: QualityProfile): void;
   /** Builds the arena of the coming round (ground, walls, obstacles, scenery) and sets the sky, fog and light to its look. */
-  setArena(arena: ArenaDef): void;
+  setArena(arena: ArenaDef, scenery?: THREE.Object3D | null): void;
+  /** The Blender model of arena `id` has arrived: draws it in place of the plain boxes, when that arena is the one standing. */
+  setScenery(id: ArenaId, model: THREE.Object3D): void;
   dispose(): void;
 }
 
@@ -85,10 +87,13 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
 
   let crowdVisible = true; // the graphics preset's choice, kept for the next arena
   let view: ArenaView | null = null;
-  const setArena = (def: ArenaDef): void => {
+  let standing: ArenaId = DEFAULT_ARENA.id;
+  const setArena = (def: ArenaDef, scenery: THREE.Object3D | null = null): void => {
     view?.dispose();
+    standing = def.id;
     view = createArenaView(def, { crowd: crowdVisible, groundTexture: def.id === 'stadium' ? dirtTexture : undefined });
     scene.add(view.group);
+    if (scenery) view.setScenery(scenery);
     const look = def.look;
     sky.set(look.sky);
     fog.color.set(look.fog);
@@ -179,6 +184,9 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
       return gl.getParameter(gl.SAMPLES) as number;
     },
     setArena,
+    setScenery: (id, model) => {
+      if (id === standing) view?.setScenery(model);
+    },
     dispose: () => {
       view?.dispose();
       composer.dispose();
