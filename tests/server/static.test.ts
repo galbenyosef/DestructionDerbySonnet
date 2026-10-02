@@ -16,6 +16,7 @@ beforeAll(async () => {
   fs.mkdirSync(path.join(root, 'assets'), { recursive: true });
   fs.writeFileSync(path.join(root, 'index.html'), '<h1>hello</h1>');
   fs.writeFileSync(path.join(root, 'assets', 'app-abc.js'), 'console.log(1)');
+  fs.writeFileSync(path.join(root, 'assets', 'arena_ice-abc.glb'), 'glTF');
   fs.writeFileSync(path.join(tmp, 'secret.txt'), 'top secret');
   fs.writeFileSync(path.join(root, '.env'), 'SECRET_KEY=1');
   fs.writeFileSync(path.join(root, 'assets', '.hidden.js'), 'hidden');
@@ -48,6 +49,13 @@ describe('static handler', () => {
     expect(res.headers.get('cache-control')).toBe('no-cache');
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
     expect(await res.text()).toBe('<h1>hello</h1>');
+  });
+
+  it('serves an arena model as a glTF binary, cached like every hashed asset', async () => {
+    const res = await fetch(`${base}/assets/arena_ice-abc.glb`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('model/gltf-binary');
+    expect(res.headers.get('cache-control')).toContain('immutable');
   });
 
   it('serves hashed assets with immutable caching and the right mime type', async () => {

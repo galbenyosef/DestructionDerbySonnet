@@ -14,6 +14,7 @@ const TYPES: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.txt': 'text/plain; charset=utf-8',
   '.wasm': 'application/wasm',
+  '.glb': 'model/gltf-binary',
   '.woff2': 'font/woff2',
 };
 
