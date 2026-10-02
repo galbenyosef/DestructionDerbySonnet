@@ -14,8 +14,10 @@ export interface QualityProfile {
   shadowMapSize: number;
   /** The glow around lamps, headlights and sparks. */
   bloom: boolean;
-  /** The crowd in the stands. */
+  /** The crowd in the stands (and, in the other arenas, the props and the backdrop). */
   crowd: boolean;
+  /** The small things on a car: interior, decals, trim. */
+  carDetail: boolean;
   /** Multiplies how many particles the effects emit (0 to 1). */
   particles: number;
   /** Pieces of debris alive at once. */
@@ -23,9 +25,9 @@ export interface QualityProfile {
 }
 
 export const QUALITY: Readonly<Record<Quality, QualityProfile>> = {
-  high: { pixelRatio: 2, msaa: 4, shadows: true, shadowMapSize: 2048, bloom: true, crowd: true, particles: 1, debris: 40 },
-  medium: { pixelRatio: 1.5, msaa: 2, shadows: true, shadowMapSize: 1024, bloom: true, crowd: true, particles: 0.6, debris: 24 },
-  low: { pixelRatio: 1, msaa: 0, shadows: false, shadowMapSize: 512, bloom: false, crowd: false, particles: 0.3, debris: 12 },
+  high: { pixelRatio: 2, msaa: 4, shadows: true, shadowMapSize: 2048, bloom: true, crowd: true, carDetail: true, particles: 1, debris: 40 },
+  medium: { pixelRatio: 1.5, msaa: 2, shadows: true, shadowMapSize: 1024, bloom: true, crowd: true, carDetail: true, particles: 0.6, debris: 24 },
+  low: { pixelRatio: 1, msaa: 0, shadows: false, shadowMapSize: 512, bloom: false, crowd: false, carDetail: false, particles: 0.3, debris: 12 },
 };
 
 /** What the player chose: kept in the browser's storage between visits. */

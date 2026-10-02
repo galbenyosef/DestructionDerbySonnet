@@ -1,4 +1,5 @@
 import { ARENA_IDS, isArenaId, type ArenaId } from './arenas';
+import { carOrDefault, isCarId, type CarId } from './cars';
 import { ARENA, NET } from './constants';
 import { FLAG_HANDBRAKE, packInput, unpackInput, type CarInput } from './input';
 import { clamp } from './math';
@@ -26,6 +27,8 @@ export interface HelloMessage {
   color: number;
   mode: JoinMode;
   code?: string;
+  /** The model of the player\'s car; the sedan when the client names none or one that does not exist. */
+  car: CarId;
 }
 export interface PingMessage {
   t: 'ping';
@@ -46,6 +49,8 @@ export interface PlayerInfo {
   slot: number;
   name: string;
   color: number;
+  /** The model of the car (looks only: every model has the same physics). */
+  car: CarId;
   /** True for server-driven cars. */
   bot?: boolean;
 }
@@ -221,7 +226,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     if (!isInt(version) || typeof name !== 'string') return null;
     if (!isInt(color) || color < 0 || color > 0xffffff) return null;
     if (mode === 'join' && typeof code !== 'string') return null;
-    return { t: 'hello', v: version, name, color, mode, code: typeof code === 'string' ? code : undefined };
+    return { t: 'hello', v: version, name, color, mode, code: typeof code === 'string' ? code : undefined, car: carOrDefault(v.car) };
   }
   return null;
 }
@@ -232,7 +237,7 @@ const isVoteCounts = (v: unknown): v is VoteCounts =>
   isObj(v) && Object.keys(v).length === ARENA_IDS.length && ARENA_IDS.every((id) => isInt(v[id]) && (v[id] as number) >= 0 && (v[id] as number) <= ARENA.MAX_CARS);
 const isList = (v: unknown): v is unknown[] => Array.isArray(v) && v.length <= ARENA.MAX_CARS;
 const isPlayerInfo = (v: unknown): v is PlayerInfo =>
-  isObj(v) && isSlot(v.slot) && typeof v.name === 'string' && isInt(v.color) && (v.bot === undefined || typeof v.bot === 'boolean');
+  isObj(v) && isSlot(v.slot) && typeof v.name === 'string' && isInt(v.color) && isCarId(v.car) && (v.bot === undefined || typeof v.bot === 'boolean');
 const isScoreRow = (v: unknown): v is ScoreRow => isObj(v) && isSlot(v.slot) && isNum(v.score) && isNum(v.kills);
 const isResultRow = (v: unknown): v is ResultRow =>
   isObj(v) && isSlot(v.slot) && typeof v.name === 'string' && isInt(v.color) && typeof v.bot === 'boolean' &&

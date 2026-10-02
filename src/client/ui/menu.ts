@@ -1,41 +1,25 @@
 import { normalizeRoomCode, type JoinMode } from '../../shared/protocol';
+import { CAR_IDS, CAR_NAMES, type CarId } from '../../shared/cars';
+import { CAR_PICTURE_URLS } from '../game/carAssets';
+import { PALETTE, loadProfile, saveProfile } from '../profile';
 import { QUALITIES, type Quality, type Settings } from '../settings';
 
 export interface JoinChoice {
   name: string;
   color: number;
+  car: CarId;
   mode: JoinMode;
   code?: string;
 }
 
-export const PALETTE: readonly number[] = [0xd84a2b, 0x2b7fd8, 0x2fb457, 0xe0b122, 0x9b59d0, 0x18b5b5, 0xe8527d, 0xe9e9e9];
+export { PALETTE };
 
-const STORE_KEY = 'wreckyard.profile';
-interface Profile {
-  name: string;
-  color: number;
-}
-
-function loadProfile(): Profile {
+/** localStorage, or null where the browser refuses even to name it. */
+function safeStorage(): Storage | null {
   try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (raw) {
-      const p = JSON.parse(raw) as Partial<Profile>;
-      if (typeof p.name === 'string' && typeof p.color === 'number' && PALETTE.includes(p.color)) {
-        return { name: p.name, color: p.color };
-      }
-    }
+    return localStorage;
   } catch {
-    /* storage unavailable or corrupt: fall through to defaults */
-  }
-  return { name: '', color: PALETTE[0]! };
-}
-
-function saveProfile(p: Profile): void {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(p));
-  } catch {
-    /* private mode: not fatal */
+    return null;
   }
 }
 
@@ -52,7 +36,7 @@ export interface MenuOptions {
 
 /** Renders the main menu into `root` and resolves once the player picks a way to join. */
 export function showMenu(root: HTMLElement, options: MenuOptions = {}): Promise<JoinChoice> {
-  const profile = loadProfile();
+  const profile = loadProfile(safeStorage());
   root.replaceChildren();
   const menu = document.createElement('div');
   menu.className = 'menu';
@@ -61,6 +45,7 @@ export function showMenu(root: HTMLElement, options: MenuOptions = {}): Promise<
     <h1>WRECKYARD</h1>
     <p class="tag">Demolition derby arena · last car running wins</p>
     <label>Driver name<input id="m-name" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Your name" /></label>
+    <div class="cars" id="m-cars" role="radiogroup" aria-label="Car model"></div>
     <div class="swatches" id="m-colors" role="radiogroup" aria-label="Car colour"></div>
     <div class="row"><button id="m-quick" class="primary" type="button">Quick Play</button><button id="m-create" type="button">Create private room</button></div>
     <div class="row"><input id="m-code" maxlength="4" placeholder="CODE" autocomplete="off" spellcheck="false" aria-label="Room code" /><button id="m-join" type="button">Join with code</button></div>
@@ -78,6 +63,7 @@ export function showMenu(root: HTMLElement, options: MenuOptions = {}): Promise<
   const codeInput = q<HTMLInputElement>('#m-code');
   const errorEl = q<HTMLElement>('#m-error');
   const swatches = q<HTMLElement>('#m-colors');
+  const cars = q<HTMLElement>('#m-cars');
   nameInput.value = profile.name;
   if (options.initialCode) codeInput.value = options.initialCode.toUpperCase().slice(0, 4);
   if (options.error) errorEl.textContent = options.error;
@@ -105,6 +91,29 @@ export function showMenu(root: HTMLElement, options: MenuOptions = {}): Promise<
     quality.addEventListener('change', changed);
     volume.addEventListener('input', changed);
     sound.addEventListener('change', changed);
+  }
+
+  let car = profile.car;
+  for (const id of CAR_IDS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'car';
+    b.dataset.car = id;
+    const picture = document.createElement('img');
+    picture.src = CAR_PICTURE_URLS[id];
+    picture.alt = '';
+    picture.draggable = false;
+    const label = document.createElement('span');
+    label.textContent = CAR_NAMES[id];
+    b.append(picture, label);
+    b.title = CAR_NAMES[id];
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', String(id === car));
+    b.addEventListener('click', () => {
+      car = id;
+      for (const c of cars.children) c.setAttribute('aria-checked', String(c === b));
+    });
+    cars.append(b);
   }
 
   let color = profile.color;
@@ -136,8 +145,8 @@ export function showMenu(root: HTMLElement, options: MenuOptions = {}): Promise<
         }
         code = normalized;
       }
-      saveProfile({ name, color });
-      resolve({ name, color, mode, code });
+      saveProfile(safeStorage(), { name, color, car });
+      resolve({ name, color, car, mode, code });
     };
     q('#m-quick').addEventListener('click', () => choose('quick'));
     q('#m-create').addEventListener('click', () => choose('create'));

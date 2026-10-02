@@ -16,7 +16,7 @@ describe('QUALITY presets', () => {
       expect(lower.shadowMapSize).toBeLessThanOrEqual(higher.shadowMapSize);
       expect(lower.particles).toBeLessThanOrEqual(higher.particles);
       expect(lower.debris).toBeLessThanOrEqual(higher.debris);
-      for (const key of ['shadows', 'bloom', 'crowd'] as const) expect(Number(lower[key])).toBeLessThanOrEqual(Number(higher[key]));
+      for (const key of ['shadows', 'bloom', 'crowd', 'carDetail'] as const) expect(Number(lower[key])).toBeLessThanOrEqual(Number(higher[key]));
     }
     expect(QUALITY.low.pixelRatio).toBeGreaterThanOrEqual(1);
     expect(QUALITY.low.particles).toBeGreaterThan(0); // low still shows something

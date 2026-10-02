@@ -1,3 +1,4 @@
+import { DEFAULT_CAR, type CarId } from '../shared/cars';
 import { NET } from '../shared/constants';
 import { NEUTRAL_INPUT, isNewerSeq, type CarInput } from '../shared/input';
 import type { ErrorCode, ServerMessage } from '../shared/protocol';
@@ -21,6 +22,7 @@ interface QueuedInput {
 export class Player {
   name = '';
   color = 0xd84a2b;
+  car: CarId = DEFAULT_CAR;
   /** Seat number inside the room; -1 when not seated. */
   slot = -1;
   room: Room | null = null;

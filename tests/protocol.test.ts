@@ -144,7 +144,7 @@ describe('parseClientMessage', () => {
   const hello = { t: 'hello', v: NET.PROTOCOL_VERSION, name: 'Max', color: 0xd84a2b, mode: 'quick' };
 
   it('accepts valid hello and ping messages', () => {
-    expect(parseClientMessage(JSON.stringify(hello))).toEqual({ ...hello, code: undefined });
+    expect(parseClientMessage(JSON.stringify(hello))).toEqual({ ...hello, code: undefined, car: 'sedan' });
     expect(parseClientMessage(JSON.stringify({ ...hello, mode: 'join', code: 'ABCD' }))).toMatchObject({ mode: 'join', code: 'ABCD' });
     expect(parseClientMessage(JSON.stringify({ t: 'ping', id: 3, c: 1234.5 }))).toEqual({ t: 'ping', id: 3, c: 1234.5 });
   });
@@ -172,6 +172,12 @@ describe('parseClientMessage', () => {
     }
   });
 
+  it('takes the car a player chose, and the sedan from a hello that names none or one that does not exist', () => {
+    const base = { t: 'hello', v: NET.PROTOCOL_VERSION, name: 'Max', color: 0xd84a2b, mode: 'quick' };
+    expect(parseClientMessage(JSON.stringify({ ...base, car: 'pickup' }))).toMatchObject({ car: 'pickup' });
+    for (const car of [undefined, 'tank', 4, null, {}, '__proto__']) expect(parseClientMessage(JSON.stringify({ ...base, car }))).toMatchObject({ car: 'sedan' });
+  });
+
   it('accepts a vote for each arena and nothing else', () => {
     for (const arena of ['stadium', 'ice', 'quarry', 'port']) {
       expect(parseClientMessage(JSON.stringify({ t: 'vote', arena }))).toEqual({ t: 'vote', arena });
@@ -193,7 +199,7 @@ describe('parseServerMessage', () => {
   const welcome = {
     t: 'welcome', v: NET.PROTOCOL_VERSION, you: 2, epoch: 3, tickRate: 60, snapshotEvery: 2,
     room: { code: 'ABCD', public: true, capacity: 8 },
-    players: [{ slot: 2, name: 'Max', color: 255 }, { slot: 3, name: 'Rusty', color: 1, bot: true }],
+    players: [{ slot: 2, name: 'Max', color: 255, car: 'coupe' }, { slot: 3, name: 'Rusty', color: 1, car: 'pickup', bot: true }],
     arena: 'ice', votes: { stadium: 0, ice: 2, quarry: 1, port: 0 },
     phase,
     scores: [{ slot: 2, score: 120, kills: 1 }],
@@ -226,8 +232,8 @@ describe('parseServerMessage', () => {
     }
   });
 
-  it('speaks protocol version 4', () => {
-    expect(NET.PROTOCOL_VERSION).toBe(4);
+  it('speaks protocol version 5', () => {
+    expect(NET.PROTOCOL_VERSION).toBe(5);
   });
 
   it('accepts the match messages: phase, hit, ko, scores and results', () => {
@@ -251,7 +257,10 @@ describe('parseServerMessage', () => {
       JSON.stringify({ ...welcome, phase: undefined }),
       JSON.stringify({ ...welcome, scores: [{ slot: 9, score: 1, kills: 0 }] }),
       JSON.stringify({ ...hit, hp: -3 }),
-      JSON.stringify({ ...welcome, players: [{ slot: 1, name: 'x', color: 1, bot: 'yes' }] }),
+      JSON.stringify({ ...welcome, players: [{ slot: 1, name: 'x', color: 1, car: 'sedan', bot: 'yes' }] }),
+      JSON.stringify({ ...welcome, players: [{ slot: 1, name: 'x', color: 1 }] }), // every car in a roster has a model
+      JSON.stringify({ ...welcome, players: [{ slot: 1, name: 'x', color: 1, car: 'tank' }] }),
+      JSON.stringify({ t: 'roster', epoch: 1, round: 1, you: 0, arena: 'ice', players: [{ slot: 0, name: 'x', color: 1 }] }),
       JSON.stringify({ ...welcome, dents: undefined }), // a welcome always carries the hit log, empty or not
       JSON.stringify({ ...welcome, dents: [{ ...hit, zone: 'roof' }] }),
       JSON.stringify({ ...welcome, dents: [{ t: 'ko' }] }),

@@ -192,6 +192,7 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
     }
     player.name = sanitizeName(msg.name, `Driver ${player.id}`);
     player.color = msg.color;
+    player.car = msg.car;
     let result: JoinResult;
     if (msg.mode === 'quick') result = lobby.quickPlay(player);
     else if (msg.mode === 'create') {

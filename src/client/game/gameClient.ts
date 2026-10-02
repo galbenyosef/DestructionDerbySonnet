@@ -17,11 +17,12 @@ import { CountdownBeeper } from './audioParams';
 import { applyChaseView, ChaseCamera } from './camera';
 import { CarView } from './carView';
 import { ARENA_SCENERY_URLS } from './arenaAssets';
+import { CarModels } from './carModels';
 import { ArenaScenery, leadingArenas, loadGltfScenery } from './arenaScenery';
 import { FxDirector } from './fx';
 import { KeyboardInput } from './input';
 import { MatchState } from './matchState';
-import { NameTag } from './nameTag';
+import { NameTag, needsNewTag } from './nameTag';
 import type { GameScene } from './scene';
 import { CanvasMarks } from './skidMarks';
 import { SpectatorCamera, cycleDirection } from './spectator';
@@ -61,6 +62,9 @@ export class GameClient {
   private readonly marks = new CanvasMarks();
   /** The Blender models of the arenas, loaded when the vote points at them. */
   private readonly scenery = new ArenaScenery(ARENA_SCENERY_URLS, loadGltfScenery);
+  /** The Blender models of the cars; a car is drawn as boxes until its model is here. */
+  private readonly carModels = new CarModels();
+  private carDetail = true;
   private readonly fx: FxDirector;
   private readonly drawingSize = new THREE.Vector2();
   private readonly auto = new AutoQuality();
@@ -128,6 +132,7 @@ export class GameClient {
   start(): void {
     if (navigator.userActivation?.isActive) this.audio.unlock(); // inside the click that started the game; otherwise the first key or click does it
     window.addEventListener('pointerdown', this.unlockAudio);
+    this.carModels.preloadAll();
     this.conn.connect();
     this.raf = requestAnimationFrame(this.frame);
     const derby = ((window as unknown as { __derby?: Record<string, unknown> }).__derby ??= {});
@@ -144,6 +149,7 @@ export class GameClient {
     this.fx.dispose();
     this.marks.dispose();
     this.scenery.dispose();
+    this.carModels.dispose();
     this.audio.dispose();
     this.conn.close();
     for (const slot of [...this.tags.keys()]) this.removeTag(slot);
@@ -168,6 +174,7 @@ export class GameClient {
       v: NET.PROTOCOL_VERSION,
       name: choice.name,
       color: choice.color,
+      car: choice.car,
       mode: choice.mode,
       code: choice.code,
     });
@@ -261,17 +268,37 @@ export class GameClient {
     if (this.match.vote(arena)) this.conn.send({ t: 'vote', arena });
   }
 
+  /** Gives a car its Blender model: at once when it is loaded, when it arrives otherwise (the boxes show until then, and for good if it never comes). */
+  private dressCar(slot: number, view: CarView): void {
+    const have = this.carModels.peek(view.car);
+    if (have) {
+      view.useModel(have);
+      return;
+    }
+    void this.carModels.request(view.car).then((model) => {
+      if (model && !this.stopped && this.views.get(slot) === view) view.useModel(model);
+    });
+  }
+
   private applyRoster(): void {
     const slots = new Set(this.roster.map((p) => p.slot));
     for (const p of this.roster) {
-      const existing = this.views.get(p.slot);
+      let existing = this.views.get(p.slot);
+      if (existing && existing.car !== p.car) {
+        this.removeTag(p.slot);
+        existing.dispose(); // another player's car in this slot: another model
+        this.views.delete(p.slot);
+        existing = undefined;
+      }
       if (existing) {
         existing.setColor(p.color);
       } else {
-        const view = new CarView(p.color);
+        const view = new CarView(p.color, p.car);
+        view.setDetail(this.carDetail);
         view.group.visible = false; // shown once the first snapshot for this world arrives
         this.opts.gs.scene.add(view.group);
         this.views.set(p.slot, view);
+        this.dressCar(p.slot, view);
       }
       if (p.slot === this.mySlot) this.removeTag(p.slot); // no floating name over your own car
       else this.setTag(p.slot, p.name);
@@ -289,7 +316,7 @@ export class GameClient {
     const view = this.views.get(slot);
     if (!view) return;
     const existing = this.tags.get(slot);
-    if (existing && existing.name === name) return;
+    if (!needsNewTag(existing, name, view)) return;
     existing?.dispose();
     const tag = new NameTag(name);
     view.group.add(tag.group);
@@ -310,6 +337,8 @@ export class GameClient {
     const profile = QUALITY[quality];
     this.settings = { ...this.settings, quality };
     this.opts.gs.applyQuality(profile);
+    this.carDetail = profile.carDetail;
+    for (const view of this.views.values()) view.setDetail(profile.carDetail);
     this.fx.setDensity(profile.particles, profile.debris);
     this.opts.onSettings(this.settings);
     this.auto.reset(); // the new setting gets its own warm-up before it is judged
