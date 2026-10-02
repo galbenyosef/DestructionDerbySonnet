@@ -79,18 +79,15 @@ export const DRIVE: DriveTuning = {
   STEER_SIGN: -1,
 };
 
+/**
+ * What every arena shares, and the Stadium's radius and wall thickness (its bowl, its floodlights and its tyre marks are dressed from them).
+ * The walls, obstacles, spawns and ground of each arena are layout data: `src/shared/arenas/<id>.json`.
+ */
 export const ARENA = {
-  /** Distance from the centre to the inner face of the wall ring (m). */
+  /** Distance from the centre to the inner face of the Stadium's wall ring (m). */
   RADIUS: 45,
-  WALL_SEGMENTS: 32,
-  WALL_HALF_HEIGHT: 1.5,
   WALL_HALF_THICKNESS: 1.0,
-  GROUND_HALF_EXTENT: 120,
-  SPAWN_RADIUS: 32,
   MAX_CARS: 8,
-  OBSTACLE_COUNT: 4,
-  OBSTACLE_RING_RADIUS: 14,
-  OBSTACLE_HALF: { x: 2.5, y: 0.75, z: 1.0 },
 } as const;
 
 /** Combat tuning. Impulses are in kN·s (1000 N·s), damage in HP, durations in simulation ticks (60 per second). */

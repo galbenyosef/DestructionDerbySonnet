@@ -1,14 +1,16 @@
 import { beforeAll, describe, expect, it } from 'vitest';
-import { ARENA, CAR, CAR_FORWARD } from '../src/shared/constants';
-import { buildArena, obstacleBoxes, spawnPose, wallSegments } from '../src/shared/arena';
+import { CAR, CAR_FORWARD } from '../src/shared/constants';
+import { buildArena, spawnPose } from '../src/shared/arena';
+import { ARENAS } from '../src/shared/arenas';
 import { quatFromYaw, quatRotate, vdot } from '../src/shared/math';
 import { RAPIER, initPhysics } from '../src/shared/physics';
+import { LEGACY as ARENA, legacyObstacleBoxes as obstacleBoxes, legacyWallSegments as wallSegments } from './helpers/legacyArena';
 
 beforeAll(async () => {
   await initPhysics();
 });
 
-describe('spawnPose', () => {
+describe('spawnPose on the Stadium ring', () => {
   it('places cars on a circle facing the centre', () => {
     for (let i = 0; i < 8; i++) {
       const p = spawnPose(i, 8);
@@ -42,7 +44,7 @@ describe('spawnPose', () => {
   });
 });
 
-describe('arena geometry specs', () => {
+describe('the Stadium geometry (as it was before arenas were data)', () => {
   it('builds a closed ring of wall segments at the arena radius', () => {
     const segments = wallSegments();
     expect(segments).toHaveLength(ARENA.WALL_SEGMENTS);
@@ -80,7 +82,8 @@ describe('buildArena physics', () => {
 
   it('creates ground, walls and obstacles', () => {
     const w = makeWorld();
-    expect(w.colliders.len()).toBe(1 + ARENA.WALL_SEGMENTS + ARENA.OBSTACLE_COUNT);
+    expect(w.colliders.len()).toBe(1 + ARENAS.stadium.boxes.length);
+    expect(ARENAS.stadium.boxes.length).toBe(ARENA.WALL_SEGMENTS + ARENA.OBSTACLE_COUNT);
     w.free();
   });
 

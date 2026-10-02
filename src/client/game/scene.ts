@@ -3,7 +3,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { obstacleBoxes, wallSegments, type BoxSpec } from '../../shared/arena';
+import type { BoxSpec } from '../../shared/arena';
+import { DEFAULT_ARENA } from '../../shared/arenas';
 import { ARENA } from '../../shared/constants';
 import type { QualityProfile } from '../settings';
 import { COMPOSER_SAMPLES, createComposerTarget, needsComposer } from './composer';
@@ -114,10 +115,10 @@ export function createGameScene(canvas: HTMLCanvasElement): GameScene {
 
   const concrete = new THREE.MeshStandardMaterial({ color: 0x8a8d91, roughness: 0.9, metalness: 0.05 });
   materials.push(concrete);
-  for (const seg of wallSegments()) scene.add(boxMesh(seg, concrete, geometries));
+  for (const seg of DEFAULT_ARENA.boxes) if (seg.kind === 'wall') scene.add(boxMesh(seg, concrete, geometries));
   const blocks = new THREE.MeshStandardMaterial({ color: 0x9a9da1, roughness: 0.85, metalness: 0.05 });
   materials.push(blocks);
-  for (const o of obstacleBoxes()) scene.add(boxMesh(o, blocks, geometries));
+  for (const o of DEFAULT_ARENA.boxes) if (o.kind !== 'wall') scene.add(boxMesh(o, blocks, geometries));
 
   // The stands with their crowd, the tyre stacks outside the barrier, and a few floodlight masts.
   const dressing = createDressing();
