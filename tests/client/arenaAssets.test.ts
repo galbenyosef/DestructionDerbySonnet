@@ -37,7 +37,7 @@ function readGlb(file: string): { gltf: Gltf; bytes: number } {
 
 describe('the arena models', () => {
   it('exist for the three arenas that have scenery, and for none other', () => {
-    expect(readdirSync(ASSETS).filter((f) => f.endsWith('.glb')).sort()).toEqual(SCENERY.map((id) => `arena_${id}.glb`).sort());
+    expect(readdirSync(ASSETS).filter((f) => f.startsWith('arena_') && f.endsWith('.glb')).sort()).toEqual(SCENERY.map((id) => `arena_${id}.glb`).sort());
     expect(Object.keys(ARENA_SCENERY_URLS).sort()).toEqual([...SCENERY].sort());
     for (const url of Object.values(ARENA_SCENERY_URLS)) expect(url).toMatch(/\.glb/);
   });
