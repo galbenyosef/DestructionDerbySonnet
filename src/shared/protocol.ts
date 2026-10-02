@@ -1,3 +1,4 @@
+import { ARENA_IDS, isArenaId, type ArenaId } from './arenas';
 import { ARENA, NET } from './constants';
 import { FLAG_HANDBRAKE, packInput, unpackInput, type CarInput } from './input';
 import { clamp } from './math';
@@ -31,7 +32,15 @@ export interface PingMessage {
   id: number;
   c: number;
 }
-export type ClientMessage = HelloMessage | PingMessage;
+/** A vote for the next round's arena; counts only while the room shows its results. */
+export interface VoteMessage {
+  t: 'vote';
+  arena: ArenaId;
+}
+export type ClientMessage = HelloMessage | PingMessage | VoteMessage;
+
+/** Votes per arena (every arena is present; none is more than the seats in a room). */
+export type VoteCounts = Record<ArenaId, number>;
 
 export interface PlayerInfo {
   slot: number;
@@ -95,6 +104,9 @@ export interface WelcomeMessage {
   epoch: number;
   /** The cars of the running round. */
   players: PlayerInfo[];
+  /** The arena of the running (or coming) round, and the tally of the vote under way (all zero outside the results). */
+  arena: ArenaId;
+  votes: VoteCounts;
   tickRate: number;
   snapshotEvery: number;
   /** Where the room is in its round (null before the first round starts) and the running scores. */
@@ -109,7 +121,14 @@ export interface RosterMessage {
   epoch: number;
   round: number;
   you: number;
+  /** The arena this round is played in: the vote's winner. */
+  arena: ArenaId;
   players: PlayerInfo[];
+}
+/** The vote's running tally: at most four a second while votes change, and an empty one when a results phase opens. */
+export interface VotesMessage {
+  t: 'votes';
+  counts: VoteCounts;
 }
 export interface HitMessage {
   t: 'hit';
@@ -161,6 +180,7 @@ export interface ErrorMessage {
 export type ServerMessage =
   | WelcomeMessage
   | RosterMessage
+  | VotesMessage
   | PhaseMessage
   | HitMessage
   | KoMessage
@@ -188,6 +208,9 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     const c = v.c;
     return isNum(id) && isNum(c) ? { t: 'ping', id, c } : null;
   }
+  if (v.t === 'vote') {
+    return isArenaId(v.arena) ? { t: 'vote', arena: v.arena } : null;
+  }
   if (v.t === 'hello') {
     const mode = v.mode;
     const version = v.v;
@@ -205,6 +228,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
 
 const isSlot = (v: unknown): v is number => isInt(v) && v >= 0 && v < ARENA.MAX_CARS;
 const isSlotOrNone = (v: unknown): v is number => isInt(v) && v >= -1 && v < ARENA.MAX_CARS;
+const isVoteCounts = (v: unknown): v is VoteCounts =>
+  isObj(v) && Object.keys(v).length === ARENA_IDS.length && ARENA_IDS.every((id) => isInt(v[id]) && (v[id] as number) >= 0 && (v[id] as number) <= ARENA.MAX_CARS);
 const isList = (v: unknown): v is unknown[] => Array.isArray(v) && v.length <= ARENA.MAX_CARS;
 const isPlayerInfo = (v: unknown): v is PlayerInfo =>
   isObj(v) && isSlot(v.slot) && typeof v.name === 'string' && isInt(v.color) && (v.bot === undefined || typeof v.bot === 'boolean');
@@ -238,7 +263,7 @@ export function parseServerMessage(raw: string): ServerMessage | null {
       const scores = v.scores;
       const dents = v.dents;
       if (
-        isInt(v.v) && isSlotOrNone(v.you) && isInt(v.epoch) && isInt(v.tickRate) && isInt(v.snapshotEvery) &&
+        isInt(v.v) && isSlotOrNone(v.you) && isArenaId(v.arena) && isVoteCounts(v.votes) && isInt(v.epoch) && isInt(v.tickRate) && isInt(v.snapshotEvery) &&
         isObj(room) && typeof room.code === 'string' && typeof room.public === 'boolean' && isInt(room.capacity) &&
         isList(players) && players.every(isPlayerInfo) &&
         (v.phase === null || isPhaseMessage(v.phase)) &&
@@ -251,10 +276,12 @@ export function parseServerMessage(raw: string): ServerMessage | null {
     }
     case 'roster': {
       const players = v.players;
-      return isInt(v.epoch) && isInt(v.round) && isSlotOrNone(v.you) && isList(players) && players.every(isPlayerInfo)
+      return isInt(v.epoch) && isInt(v.round) && isSlotOrNone(v.you) && isArenaId(v.arena) && isList(players) && players.every(isPlayerInfo)
         ? (v as unknown as RosterMessage)
         : null;
     }
+    case 'votes':
+      return isVoteCounts(v.counts) ? (v as unknown as VotesMessage) : null;
     case 'phase':
       return isPhaseMessage(v) ? v : null;
     case 'hit':

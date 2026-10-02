@@ -8,9 +8,9 @@ const players: PlayerInfo[] = [
   { slot: 2, name: 'Rusty', color: 0x8a8f98, bot: true },
 ];
 const welcome = (over: Partial<WelcomeMessage> = {}): WelcomeMessage => ({
-  t: 'welcome', v: 2, you: 0, room: { code: 'ABCD', public: true, capacity: 8 }, epoch: 1, players, tickRate: 60, snapshotEvery: 2, phase: null, scores: [], dents: [], ...over,
+  t: 'welcome', v: 2, you: 0, room: { code: 'ABCD', public: true, capacity: 8 }, epoch: 1, players, tickRate: 60, snapshotEvery: 2, phase: null, scores: [], dents: [], arena: 'stadium', votes: { stadium: 0, ice: 0, quarry: 0, port: 0 }, ...over,
 });
-const roster = (over: Partial<RosterMessage> = {}): RosterMessage => ({ t: 'roster', epoch: 2, round: 1, you: 0, players, ...over });
+const roster = (over: Partial<RosterMessage> = {}): RosterMessage => ({ t: 'roster', epoch: 2, round: 1, you: 0, arena: 'stadium', players, ...over });
 const phase = (p: PhaseMessage['phase'], remainingMs: number, round = 1): PhaseMessage => ({ t: 'phase', phase: p, round, remainingMs });
 const ko = (over: Partial<KoMessage>): KoMessage => ({ t: 'ko', tick: 100, victim: 1, killer: 0, assists: [], reason: 'damage', ...over });
 

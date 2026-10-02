@@ -19,7 +19,7 @@ export interface GameServerOptions {
   maxConnections?: number;
   /** Milliseconds a new socket may stay silent before it is closed; defaults to NET.HELLO_TIMEOUT_MS. */
   helloTimeoutMs?: number;
-  /** Round timing in simulation ticks (defaults: 5 s countdown, 4 min round, 8 s results). */
+  /** Round timing in simulation ticks (defaults: 5 s countdown, 4 min round, 12 s results). */
   rules?: Partial<RoomRules>;
   /** Bots fill each room up to this many cars (default 4; 0 = none). */
   botFill?: number;
@@ -177,6 +177,10 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
       player.send({ t: 'pong', id: msg.id, c: msg.c, tick: player.room?.simTick ?? 0 });
       return;
     }
+    if (msg.t === 'vote') {
+      player.room?.vote(player, msg.arena); // from a player who is not in a room, or outside the results phase, it is nothing
+      return;
+    }
     if (player.joined) {
       player.sendError('already_joined', ERROR_TEXT.already_joined);
       return;
@@ -215,6 +219,8 @@ export function createGameServer(options: GameServerOptions = {}): GameServer {
       room: result.room.info(),
       epoch: result.room.epoch,
       players: greeting.players,
+      arena: greeting.arena,
+      votes: greeting.votes,
       tickRate: PHYSICS.TICK_RATE,
       snapshotEvery: NET.SNAPSHOT_EVERY,
       phase: greeting.phase,

@@ -137,7 +137,8 @@ export const COMBAT = {
 export const ROUND = {
   COUNTDOWN_TICKS: 5 * 60,
   LIVE_TICKS: 4 * 60 * 60,
-  RESULTS_TICKS: 8 * 60,
+  /** The results screen is also the vote for the next arena. */
+  RESULTS_TICKS: 12 * 60,
   /** Bots fill a room up to this many cars; they step aside as humans join. */
   BOT_FILL: 4,
   /** A player who joins during a countdown restarts it (so a burst of joiners plays together), at most this often per round. */
@@ -145,8 +146,8 @@ export const ROUND = {
 } as const;
 
 export const NET = {
-  /** 3: the welcome carries the round's latest hits (`dents`). 2: rounds, hit/ko/scores/results messages, `you` in the roster. */
-  PROTOCOL_VERSION: 3,
+  /** 4: arenas: `vote` (client) and `votes` (server), `arena` in the welcome and the roster, `votes` in the welcome. 3: the welcome carries the round's latest hits (`dents`). 2: rounds, hit/ko/scores/results messages, `you` in the roster. */
+  PROTOCOL_VERSION: 4,
   /** The welcome message carries this many of the round's latest hits (a newcomer replays them to dent the cars). */
   MAX_HIT_LOG: 64,
   /** Simulation ticks per snapshot: 2 => 30 Hz. */

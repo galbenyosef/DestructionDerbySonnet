@@ -172,6 +172,16 @@ describe('parseClientMessage', () => {
     }
   });
 
+  it('accepts a vote for each arena and nothing else', () => {
+    for (const arena of ['stadium', 'ice', 'quarry', 'port']) {
+      expect(parseClientMessage(JSON.stringify({ t: 'vote', arena }))).toEqual({ t: 'vote', arena });
+    }
+    for (const bad of [undefined, '', 'Ice', 'moon', 3, null, {}, ['ice'], '__proto__', 'constructor']) {
+      expect(parseClientMessage(JSON.stringify({ t: 'vote', arena: bad }))).toBeNull();
+    }
+    expect(parseClientMessage(JSON.stringify({ t: 'vote' }))).toBeNull();
+  });
+
   it('rejects oversize payloads', () => {
     expect(parseClientMessage(JSON.stringify({ ...hello, name: 'x'.repeat(NET.MAX_PAYLOAD_BYTES) }))).toBeNull();
   });
@@ -184,6 +194,7 @@ describe('parseServerMessage', () => {
     t: 'welcome', v: NET.PROTOCOL_VERSION, you: 2, epoch: 3, tickRate: 60, snapshotEvery: 2,
     room: { code: 'ABCD', public: true, capacity: 8 },
     players: [{ slot: 2, name: 'Max', color: 255 }, { slot: 3, name: 'Rusty', color: 1, bot: true }],
+    arena: 'ice', votes: { stadium: 0, ice: 2, quarry: 1, port: 0 },
     phase,
     scores: [{ slot: 2, score: 120, kills: 1 }],
     dents: [hit],
@@ -195,7 +206,7 @@ describe('parseServerMessage', () => {
   it('accepts well-formed server messages', () => {
     expect(parseServerMessage(JSON.stringify(welcome))).toEqual(welcome);
     expect(parseServerMessage(JSON.stringify({ ...welcome, you: -1, phase: null, scores: [] }))).toMatchObject({ you: -1, phase: null });
-    const roster = { t: 'roster', epoch: 1, round: 4, you: -1, players: [] };
+    const roster = { t: 'roster', epoch: 1, round: 4, you: -1, arena: 'port', players: [] };
     expect(parseServerMessage(JSON.stringify(roster))).toEqual(roster);
     expect(parseServerMessage(JSON.stringify({ t: 'pong', id: 1, c: 2, tick: 3 }))).toEqual({ t: 'pong', id: 1, c: 2, tick: 3 });
     expect(parseServerMessage(JSON.stringify({ t: 'error', code: 'room_full', message: 'full' }))).toEqual({ t: 'error', code: 'room_full', message: 'full' });
@@ -205,6 +216,18 @@ describe('parseServerMessage', () => {
     expect(parseServerMessage(JSON.stringify({ ...welcome, dents: [] }))).toMatchObject({ dents: [] });
     const full = Array.from({ length: NET.MAX_HIT_LOG }, (_, i) => ({ ...hit, tick: i }));
     expect(parseServerMessage(JSON.stringify({ ...welcome, dents: full }))).toMatchObject({ dents: full });
+  });
+
+  it('accepts the vote tally, and refuses one that is not a count per arena', () => {
+    const votes = { t: 'votes', counts: { stadium: 1, ice: 2, quarry: 0, port: 3 } };
+    expect(parseServerMessage(JSON.stringify(votes))).toEqual(votes);
+    for (const counts of [undefined, {}, { stadium: 1 }, { stadium: 1, ice: 2, quarry: 0, port: -1 }, { stadium: 1, ice: 2, quarry: 0, port: 9 }, { stadium: 'a', ice: 0, quarry: 0, port: 0 }, [1, 2, 3, 4]]) {
+      expect(parseServerMessage(JSON.stringify({ t: 'votes', counts }))).toBeNull();
+    }
+  });
+
+  it('speaks protocol version 4', () => {
+    expect(NET.PROTOCOL_VERSION).toBe(4);
   });
 
   it('accepts the match messages: phase, hit, ko, scores and results', () => {
@@ -233,8 +256,17 @@ describe('parseServerMessage', () => {
       JSON.stringify({ ...welcome, dents: [{ ...hit, zone: 'roof' }] }),
       JSON.stringify({ ...welcome, dents: [{ t: 'ko' }] }),
       JSON.stringify({ ...welcome, dents: Array.from({ length: NET.MAX_HIT_LOG + 1 }, () => hit) }),
-      JSON.stringify({ t: 'roster', epoch: 1, round: 1, you: 0, players: [{ slot: 'a' }] }),
+      JSON.stringify({ t: 'roster', epoch: 1, round: 1, you: 0, arena: 'ice', players: [{ slot: 'a' }] }),
       JSON.stringify({ t: 'roster', epoch: 1, players: [] }), // no round / you
+      JSON.stringify({ t: 'roster', epoch: 1, round: 4, you: -1, players: [] }), // no arena
+      JSON.stringify({ t: 'roster', epoch: 1, round: 4, you: -1, arena: 'moon', players: [] }),
+      JSON.stringify({ ...welcome, arena: undefined }),
+      JSON.stringify({ ...welcome, arena: 'moon' }),
+      JSON.stringify({ ...welcome, votes: undefined }),
+      JSON.stringify({ ...welcome, votes: { stadium: 0, ice: 0, quarry: 0 } }),
+      JSON.stringify({ ...welcome, votes: { stadium: 0, ice: -1, quarry: 0, port: 0 } }),
+      JSON.stringify({ ...welcome, votes: { stadium: 0, ice: 9, quarry: 0, port: 0 } }), // more votes than seats
+      JSON.stringify({ ...welcome, votes: { stadium: 0, ice: 1.5, quarry: 0, port: 0 } }),
       JSON.stringify({ t: 'pong', id: 1 }),
       JSON.stringify({ t: 'error', code: 5, message: 'x' }),
     ]) {

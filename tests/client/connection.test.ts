@@ -84,10 +84,10 @@ describe('Connection', () => {
     expect(fake.binaryType).toBe('arraybuffer');
     fake.open();
     expect(events.open).toBe(1);
-    fake.receive(JSON.stringify({ t: 'roster', epoch: 2, round: 1, you: -1, players: [] }));
+    fake.receive(JSON.stringify({ t: 'roster', epoch: 2, round: 1, you: -1, arena: 'stadium', players: [] }));
     fake.receive('not json'); // ignored
     fake.receive(JSON.stringify({ t: 'mystery' })); // ignored
-    expect(events.messages).toEqual([{ t: 'roster', epoch: 2, round: 1, you: -1, players: [] }]);
+    expect(events.messages).toEqual([{ t: 'roster', epoch: 2, round: 1, you: -1, arena: 'stadium', players: [] }]);
   });
 
   it('decodes binary snapshots and stamps them with the arrival time', () => {

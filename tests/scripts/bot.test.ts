@@ -13,6 +13,8 @@ const welcome = (you: number): WelcomeMessage => ({
   room: { code: 'TEST', public: true, capacity: 8 },
   epoch: 1,
   players: [],
+  arena: 'stadium',
+  votes: { stadium: 0, ice: 0, quarry: 0, port: 0 },
   tickRate: 60,
   snapshotEvery: 2,
   phase: { t: 'phase', phase: 'live', round: 1, remainingMs: 100_000 },

@@ -8,6 +8,7 @@ import type { CarState } from '../../src/shared/types';
 import { Player } from '../../src/server/player';
 import { Room, type RoomRules } from '../../src/server/room';
 import type { RoundState } from '../../src/server/round';
+import { seedForArena } from './arenaSeed';
 import { FakeSocket } from './fakeSocket';
 
 export const TICK_MS = 1000 / 60;
@@ -21,6 +22,8 @@ export interface LoopbackOptions {
   jitterMs?: number;
   lossPct?: number;
   seed?: number;
+  /** Seeds the room, which draws the first round's arena from it (default: a seed that plays in the Stadium, which the tuning tests were written in). */
+  roomSeed?: number;
   /** Scripted input for the local (predicted) player and the remote player, as a function of the 60 Hz tick index. */
   local: (k: number) => CarInput;
   remote: (k: number) => CarInput;
@@ -62,6 +65,7 @@ export class Loopback {
   constructor(private readonly options: LoopbackOptions) {
     this.room = new Room('LOOP', true, () => undefined, {
       botFill: 0,
+      seed: options.roomSeed ?? seedForArena('stadium'),
       rules: { countdownTicks: 1, liveTicks: 1e9, resultsTicks: 1e9, ...options.rules },
     });
     const random = mulberry32(options.seed ?? 1);
