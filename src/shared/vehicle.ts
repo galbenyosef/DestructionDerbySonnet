@@ -1,5 +1,6 @@
 import { CAR, CAR_FORWARD, DRIVE, SUSPENSION, TIRE } from './constants';
 import { NEUTRAL_INPUT, type CarInput } from './input';
+import { NEUTRAL_GROUND, type GroundFeel } from './arenas';
 import { clamp, lerp, quatRotate, vdot } from './math';
 import { RAPIER } from './physics';
 import type { Quat, Vec3 } from './types';
@@ -26,17 +27,19 @@ export interface CarRig {
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
   readonly controller: RAPIER.DynamicRayCastVehicleController;
+  /** How the arena's ground treats this car: tyre grip, extra drag, engine power. */
+  readonly ground: GroundFeel;
   input: CarInput;
 }
 
-export function createCarRig(world: RAPIER.World, slot: number, pose: { pos: Vec3; quat: Quat }): CarRig {
+export function createCarRig(world: RAPIER.World, slot: number, pose: { pos: Vec3; quat: Quat }, ground: GroundFeel = NEUTRAL_GROUND): CarRig {
   const body = world.createRigidBody(
     RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(pose.pos.x, pose.pos.y, pose.pos.z)
       .setRotation(pose.quat)
       .setCanSleep(false)
       .setCcdEnabled(true)
-      .setLinearDamping(CAR.LINEAR_DAMPING)
+      .setLinearDamping(CAR.LINEAR_DAMPING + ground.drag)
       .setAngularDamping(CAR.ANGULAR_DAMPING),
   );
   const collider = world.createCollider(
@@ -62,10 +65,10 @@ export function createCarRig(world: RAPIER.World, slot: number, pose: { pos: Vec
     controller.setWheelSuspensionRelaxation(i, SUSPENSION.RELAXATION);
     controller.setWheelMaxSuspensionTravel(i, SUSPENSION.MAX_TRAVEL);
     controller.setWheelMaxSuspensionForce(i, SUSPENSION.MAX_FORCE);
-    controller.setWheelFrictionSlip(i, TIRE.SLIP);
+    controller.setWheelFrictionSlip(i, TIRE.SLIP * ground.grip);
     controller.setWheelSideFrictionStiffness(i, TIRE.SIDE_STIFFNESS);
   }
-  return { slot, body, collider, controller, input: { ...NEUTRAL_INPUT } };
+  return { slot, body, collider, controller, ground, input: { ...NEUTRAL_INPUT } };
 }
 
 /** Signed speed along the car's forward axis (m/s). */
@@ -86,27 +89,29 @@ export function steeringAngle(steer: number, forwardSpeed: number): number {
 /** Turns the car's current input into wheel forces. Arithmetic only — no trig on the per-tick path. */
 export function driveCar(rig: CarRig): void {
   const { controller: c, body, input } = rig;
+  const { grip, power } = rig.ground;
+  const topSpeed = DRIVE.MAX_SPEED * power;
   const vf = forwardSpeed(body);
   const t = clamp(input.throttle, -1, 1);
   let engine = 0;
   let brake = 0;
   if (t > 0) {
     if (vf < -1) brake = DRIVE.BRAKE * t; // moving backwards: brake first
-    else engine = t * DRIVE.ENGINE * clamp(1 - vf / DRIVE.MAX_SPEED, 0, 1);
+    else engine = t * DRIVE.ENGINE * power * clamp(1 - vf / topSpeed, 0, 1);
   } else if (t < 0) {
     if (vf > 1) brake = DRIVE.BRAKE * -t; // moving forwards: brake first, reverse once stopped
-    else engine = t * DRIVE.ENGINE * DRIVE.REVERSE_SCALE * clamp(1 + vf / (DRIVE.MAX_SPEED * 0.4), 0, 1);
+    else engine = t * DRIVE.ENGINE * power * DRIVE.REVERSE_SCALE * clamp(1 + vf / (topSpeed * 0.4), 0, 1);
   }
   const steering = steeringAngle(input.steer, vf);
   for (const i of FRONT_WHEELS) {
     c.setWheelSteering(i, steering);
     c.setWheelBrake(i, brake);
     c.setWheelEngineForce(i, 0);
-    c.setWheelFrictionSlip(i, TIRE.SLIP);
+    c.setWheelFrictionSlip(i, TIRE.SLIP * grip);
   }
   for (const i of REAR_WHEELS) {
     c.setWheelEngineForce(i, engine);
     c.setWheelBrake(i, brake + (input.handbrake ? DRIVE.HANDBRAKE : 0));
-    c.setWheelFrictionSlip(i, input.handbrake ? TIRE.SLIP * TIRE.HANDBRAKE_SLIP_SCALE : TIRE.SLIP);
+    c.setWheelFrictionSlip(i, input.handbrake ? TIRE.SLIP * grip * TIRE.HANDBRAKE_SLIP_SCALE : TIRE.SLIP * grip);
   }
 }

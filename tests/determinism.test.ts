@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { initPhysics } from '../src/shared/physics';
+import { ARENA_IDS, getArena } from '../src/shared/arenas';
 import { runScripted, scriptedInput, simHash } from '../src/shared/determinism';
 
 beforeAll(async () => {
@@ -52,5 +53,25 @@ describe('simHash', () => {
     const run = runScripted(600, [0, 1, 2]);
     expect(run.closestApproach).toBeLessThan(5);
     expect(run.topSpeed).toBeGreaterThan(10);
+  });
+});
+
+describe('simHash in each arena', () => {
+  // Recorded from `npm run hash -- 600 <arena>`; the browser must print the same (`await __derby.simHash(600, '<arena>')`).
+  // A change to the physics, the tuning or a layout moves them on purpose or by mistake: say which, and record the new ones.
+  const RECORDED = { stadium: '10c3a72a', ice: '349f6dd7', quarry: 'c44738de', port: '4037f0e3' } as const;
+
+  for (const id of ARENA_IDS) {
+    it(`prints the recorded hash for ${id}`, () => {
+      expect(simHash(600, [0, 1, 2], getArena(id))).toBe(RECORDED[id]);
+    });
+  }
+
+  it('differs from one arena to the next', () => {
+    expect(new Set(ARENA_IDS.map((id) => simHash(300, [0, 1, 2], getArena(id)))).size).toBe(ARENA_IDS.length);
+  });
+
+  it('defaults to the Stadium', () => {
+    expect(simHash(120)).toBe(simHash(120, [0, 1, 2], getArena('stadium')));
   });
 });
