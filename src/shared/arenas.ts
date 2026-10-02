@@ -40,6 +40,8 @@ export interface ArenaLook {
   sunIntensity: number;
   hemiSky: string;
   hemiGround: string;
+  /** The colour of the tyre marks on this ground (#rrggbb). */
+  marks: string;
 }
 
 export interface ArenaDef {
@@ -64,6 +66,7 @@ const obj = (v: unknown, path: string): Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : fail(path, 'must be an object');
 const num = (v: unknown, path: string): number => (typeof v === 'number' && Number.isFinite(v) ? v : fail(path, 'must be a finite number'));
 const str = (v: unknown, path: string): string => (typeof v === 'string' && v.length > 0 ? v : fail(path, 'must be a non-empty string'));
+const hexColour = (v: unknown, path: string): string => (typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v) ? v : fail(path, 'must be a #rrggbb colour'));
 const pairs = (v: unknown, path: string, min: number): Array<[number, number]> => {
   if (!Array.isArray(v) || v.length < min) fail(path, `must be a list of at least ${min} [x, z] pairs`);
   return v.map((p, i) => {
@@ -107,7 +110,7 @@ export function parseArena(raw: unknown): ArenaDef {
   const look: ArenaLook = {
     sky: str(l.sky, 'look.sky'), fog: str(l.fog, 'look.fog'), fogNear: num(l.fogNear, 'look.fogNear'), fogFar: num(l.fogFar, 'look.fogFar'),
     ground: str(l.ground, 'look.ground'), wall: str(l.wall, 'look.wall'), block: str(l.block, 'look.block'), sun: str(l.sun, 'look.sun'),
-    sunIntensity: num(l.sunIntensity, 'look.sunIntensity'), hemiSky: str(l.hemiSky, 'look.hemiSky'), hemiGround: str(l.hemiGround, 'look.hemiGround'),
+    sunIntensity: num(l.sunIntensity, 'look.sunIntensity'), hemiSky: str(l.hemiSky, 'look.hemiSky'), hemiGround: str(l.hemiGround, 'look.hemiGround'), marks: hexColour(l.marks, 'look.marks'),
   };
   return { id, name: str(a.name, 'name'), groundHalfExtent: num(a.groundHalfExtent, 'groundHalfExtent'), ground, boxes, bounds, spawn, look };
 }

@@ -15,8 +15,13 @@ export interface ArenaViewOptions {
 /** Everything that stands in one arena: the ground, the walls and obstacles drawn from the layout, and the Stadium's dressing. */
 export interface ArenaView {
   readonly group: THREE.Group;
-  /** Shows or hides the crowd (only the Stadium has one). */
+  /** Shows or hides what the graphics preset may drop: the Stadium's crowd, the other arenas' props and backdrop. */
   setCrowd(visible: boolean): void;
+  /**
+   * Draws a loaded Blender model in place of the plain ground and boxes (null: back to the plain ones). The model is shared, so a copy
+   * of it is added and what it holds is never disposed here.
+   */
+  setScenery(model: THREE.Object3D | null): void;
   dispose(): void;
 }
 
@@ -43,6 +48,9 @@ export function createArenaView(def: ArenaDef, options: ArenaViewOptions): Arena
   const materials: THREE.Material[] = [];
   const textures: THREE.Texture[] = [];
 
+  const plain = new THREE.Group(); // the ground and the boxes of the layout: what is drawn until (and unless) a model replaces them
+  plain.name = 'plain';
+  group.add(plain);
   const texture = options.groundTexture?.();
   if (texture) textures.push(texture);
   const groundMaterial = new THREE.MeshStandardMaterial(texture ? { map: texture, roughness: 1, metalness: 0 } : { color: def.look.ground, roughness: 1, metalness: 0 });
@@ -53,7 +61,7 @@ export function createArenaView(def: ArenaDef, options: ArenaViewOptions): Arena
   ground.name = 'ground';
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
-  group.add(ground);
+  plain.add(ground);
 
   // one material per kind of box (and per container colour): the walls are one draw state, not forty
   const byKind = new Map<string, THREE.Material>();
@@ -69,7 +77,7 @@ export function createArenaView(def: ArenaDef, options: ArenaViewOptions): Arena
     }
     return m;
   };
-  for (const b of def.boxes) group.add(boxMesh(b, materialFor(b), geometries));
+  for (const b of def.boxes) plain.add(boxMesh(b, materialFor(b), geometries));
 
   // the Stadium alone has its stands, tyre stacks and floodlight masts (the other arenas get their scenery from Blender, Plan 9)
   let dressing: ReturnType<typeof createDressing> | null = null;
@@ -96,14 +104,43 @@ export function createArenaView(def: ArenaDef, options: ArenaViewOptions): Arena
     }
   }
 
+  let extras = options.crowd;
+  let scenery: THREE.Object3D | null = null;
+  const applyExtras = (): void => {
+    scenery?.traverse((o) => {
+      if (o.name.startsWith('props_') || o.name.startsWith('far_')) o.visible = extras;
+    });
+  };
+
   return {
     group,
-    setCrowd: (visible) => dressing?.setCrowd(visible),
+    setCrowd: (visible) => {
+      extras = visible;
+      dressing?.setCrowd(visible);
+      applyExtras();
+    },
+    setScenery: (model) => {
+      if (scenery) group.remove(scenery);
+      scenery = null;
+      plain.visible = model === null;
+      if (!model) return;
+      scenery = model.clone(true); // shares geometry and materials with the loaded model
+      scenery.name = 'scenery';
+      scenery.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        const part = o.name.split('_')[0];
+        o.castShadow = part === 'walls' || part === 'obstacles' || part === 'props';
+        o.receiveShadow = part !== 'far';
+      });
+      group.add(scenery);
+      applyExtras();
+    },
     dispose: () => {
       dressing?.dispose();
       for (const g of geometries) g.dispose();
       for (const m of materials) m.dispose();
       for (const t of textures) t.dispose();
+      scenery = null; // the model is shared: whoever loaded it frees it
       group.removeFromParent();
     },
   };

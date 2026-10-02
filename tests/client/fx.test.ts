@@ -16,6 +16,10 @@ class Recorder implements MarkSurface {
   lines = 0;
   cleared = 0;
   extents: number[] = [];
+  colours: string[] = [];
+  setColor(c: string): void {
+    this.colours.push(c);
+  }
   setExtent(extent: number): void {
     this.extents.push(extent);
   }
@@ -432,5 +436,12 @@ describe('FxDirector in another arena', () => {
     expect(t.surface.cleared).toBeGreaterThan(cleared);
     t.fx.setArena(ARENAS.stadium);
     expect(t.surface.extents).toEqual([64, SKID.EXTENT]);
+  });
+
+  it('draws the marks in the colour of the arena\'s ground', () => {
+    const t = setup();
+    t.fx.setArena(ARENAS.ice);
+    t.fx.setArena(ARENAS.port);
+    expect(t.surface.colours).toEqual([ARENAS.ice.look.marks, ARENAS.port.look.marks]);
   });
 });

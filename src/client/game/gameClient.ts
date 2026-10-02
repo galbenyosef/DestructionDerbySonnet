@@ -16,6 +16,8 @@ import { AudioEngine, type Listener } from './audio';
 import { CountdownBeeper } from './audioParams';
 import { applyChaseView, ChaseCamera } from './camera';
 import { CarView } from './carView';
+import { ARENA_SCENERY_URLS } from './arenaAssets';
+import { ArenaScenery, leadingArenas, loadGltfScenery } from './arenaScenery';
 import { FxDirector } from './fx';
 import { KeyboardInput } from './input';
 import { MatchState } from './matchState';
@@ -57,6 +59,8 @@ export class GameClient {
   private readonly audio = new AudioEngine();
   private readonly beeper = new CountdownBeeper();
   private readonly marks = new CanvasMarks();
+  /** The Blender models of the arenas, loaded when the vote points at them. */
+  private readonly scenery = new ArenaScenery(ARENA_SCENERY_URLS, loadGltfScenery);
   private readonly fx: FxDirector;
   private readonly drawingSize = new THREE.Vector2();
   private readonly auto = new AutoQuality();
@@ -139,6 +143,7 @@ export class GameClient {
     window.removeEventListener('pointerdown', this.unlockAudio);
     this.fx.dispose();
     this.marks.dispose();
+    this.scenery.dispose();
     this.audio.dispose();
     this.conn.close();
     for (const slot of [...this.tags.keys()]) this.removeTag(slot);
@@ -197,6 +202,7 @@ export class GameClient {
         break;
       case 'votes':
         this.match.onVotes(m);
+        for (const id of leadingArenas(m.counts)) void this.scenery.request(id); // the winner will be ready for the countdown
         break;
       case 'phase':
         this.session.onPhase(m.phase);
@@ -240,9 +246,14 @@ export class GameClient {
     if (id === this.arenaId) return;
     this.arenaId = id;
     const arena = getArena(id);
-    this.opts.gs.setArena(arena);
+    this.opts.gs.setArena(arena, this.scenery.peek(id)); // the plain boxes until the model is here, and for good if it never comes
     this.fx.setArena(arena);
     this.spectator.setBounds(arena.bounds);
+    if (this.scenery.has(id) && !this.scenery.peek(id)) {
+      void this.scenery.request(id).then((model) => {
+        if (model && this.arenaId === id && !this.stopped) this.opts.gs.setScenery(id, model);
+      });
+    }
   }
 
   /** A click on an arena card, or a key from 1 to 4: asks the server for it when a vote is open. */
